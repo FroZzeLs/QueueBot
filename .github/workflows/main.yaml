@@ -32,8 +32,8 @@ jobs:
           file: Dockerfile
           push: true
           tags: frozzels/queue_bot:latest
-          cache-from: type=registry,ref=frozzels/queue_bot:cache
-          cache-to: type=registry,ref=frozzels/queue_bot:cache,mode=max
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   deploy:
     needs: build-and-push
