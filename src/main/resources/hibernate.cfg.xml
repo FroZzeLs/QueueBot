@@ -3,24 +3,30 @@
         "http://www.hibernate.org/dtd/hibernate-configuration-3.0.dtd">
 <hibernate-configuration>
     <session-factory>
-        <!-- JDBC Database connection settings -->
-        <property name="connection.driver_class">org.postgresql.Driver</property>
-        <property name="connection.url">jdbc:postgresql://localhost:5432/queue_db</property>
-        <property name="connection.username">postgres</property>
-        <property name="connection.password">postgres</property>
+        <property name="jakarta.persistence.jdbc.driver">org.postgresql.Driver</property>
+        <property name="jakarta.persistence.jdbc.url">jdbc:postgresql://localhost:5432/queue_db</property>
+        <property name="jakarta.persistence.jdbc.user">postgres</property>
+        <property name="jakarta.persistence.jdbc.password">postgres</property>
 
-        <!-- JDBC connection pool settings ... using built-in test pool -->
-        <property name="connection.pool_size">10</property>
+        <!-- Настройки пула соединений -->
+        <property name="hibernate.connection.pool_size">10</property>
+
+        <!-- Показывать SQL в консоли (false для продакшена) -->
         <property name="show_sql">false</property>
-        <property name="current_session_context_class">thread</property>
+
+        <!-- Управление схемой БД (update - автоматически создает/обновляет таблицы) -->
         <property name="hbm2ddl.auto">update</property>
 
-        <!-- Mappings -->
+        <!-- Контекст сессии -->
+        <property name="current_session_context_class">thread</property>
+
+        <!-- СПИСОК СУЩНОСТЕЙ (ENTITIES) -->
         <mapping class="by.frozzel.model.Student"/>
         <mapping class="by.frozzel.model.Subject"/>
         <mapping class="by.frozzel.model.QueueState"/>
         <mapping class="by.frozzel.model.SwapRequest"/>
         <mapping class="by.frozzel.model.TemporarySwap"/>
         <mapping class="by.frozzel.model.SkippedStudent"/>
+
     </session-factory>
 </hibernate-configuration>
