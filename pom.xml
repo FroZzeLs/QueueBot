@@ -57,11 +57,7 @@
             <version>5.2.2</version>
         </dependency>
 
-        <!-- =================================================== -->
-        <!--               FIX FOR JAVA 11+ / 23                 -->
-        <!-- =================================================== -->
-
-        <!-- 1. JAKARTA (Для Hibernate 6) -->
+        <!-- JAXB/Jakarta Fixes -->
         <dependency>
             <groupId>jakarta.xml.bind</groupId>
             <artifactId>jakarta.xml.bind-api</artifactId>
@@ -72,8 +68,6 @@
             <artifactId>jaxb-runtime</artifactId>
             <version>4.0.2</version>
         </dependency>
-
-        <!-- 2. JAVAX (Для Jackson и TelegramBots, чтобы убрать ошибку NoClassDefFoundError) -->
         <dependency>
             <groupId>javax.xml.bind</groupId>
             <artifactId>jaxb-api</artifactId>
@@ -94,7 +88,6 @@
             <artifactId>activation</artifactId>
             <version>1.1.1</version>
         </dependency>
-
     </dependencies>
 
     <build>
@@ -114,6 +107,29 @@
                         </path>
                     </annotationProcessorPaths>
                 </configuration>
+            </plugin>
+
+            <!-- !!! ВАЖНЫЙ ПЛАГИН ДЛЯ СОЗДАНИЯ ЗАПУСКАЕМОГО JAR !!! -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.5.1</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <!-- УКАЗЫВАЕМ ПУТЬ К MAIN КЛАССУ -->
+                                    <mainClass>by.frozzel.Main</mainClass>
+                                </transformer>
+                            </transformers>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>
