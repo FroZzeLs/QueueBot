@@ -15,7 +15,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 
 @RestController
@@ -52,6 +51,8 @@ public class AuthController {
     public static class RegisterSuperAdminRequest {
         public String superKey;
         public String telegramTag;
+        public String fio;
+        public Integer subgroup;
         public String password;
         public boolean rememberDevice;
     }
@@ -63,19 +64,37 @@ public class AuthController {
         if (req.superKey == null || req.superKey.isBlank() || !req.superKey.equals(expected)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("ok", false, "error", "INVALID_SUPER_KEY"));
         }
-        String tag = normalizeTag(req.telegramTag);
-        if (tag == null || tag.isBlank()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "EMPTY_TAG"));
+        
+        String fio = req.fio != null && !req.fio.isBlank() ? req.fio.trim() : null;
+        String tag = req.telegramTag != null && !req.telegramTag.isBlank() ? normalizeTag(req.telegramTag) : null;
+        
+        if (fio == null && tag == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "EMPTY_IDENTIFIER"));
         }
+        if (fio != null && (req.subgroup == null || (req.subgroup != 1 && req.subgroup != 2))) {
+            return ResponseEntity.badRequest().body(Map.of("error", "INVALID_SUBGROUP"));
+        }
+        
         try (var s = HibernateUtil.getSessionFactory().openSession()) {
             var tx = s.beginTransaction();
 
-            Student st = s.createQuery("FROM Student WHERE telegramTag = :tag", Student.class)
-                    .setParameter("tag", tag)
-                    .setMaxResults(1)
-                    .uniqueResult();
+            Student st = null;
+            if (tag != null) {
+                st = s.createQuery("FROM Student WHERE telegramTag = :tag", Student.class)
+                        .setParameter("tag", tag)
+                        .setMaxResults(1)
+                        .uniqueResult();
+            }
+            if (st == null && fio != null) {
+                st = s.createQuery("FROM Student WHERE fio = :fio AND subgroupNum = :subgroup", Student.class)
+                        .setParameter("fio", fio)
+                        .setParameter("subgroup", req.subgroup)
+                        .setMaxResults(1)
+                        .uniqueResult();
+            }
+            
             if (st == null) {
-                st = new Student("Суперадмин " + tag, 1, tag);
+                st = new Student(fio != null ? fio : ("Суперадмин " + tag), req.subgroup != null ? req.subgroup : 1, tag);
                 s.persist(st);
             }
             st.setAdmin(true);
@@ -100,20 +119,40 @@ public class AuthController {
 
     public static class LoginRequest {
         public String telegramTag;
+        public String fio;
+        public Integer subgroup;
         public String password;
         public boolean rememberDevice;
     }
 
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody @Valid LoginRequest req, HttpServletResponse response) {
-        String tag = normalizeTag(req.telegramTag);
-        if (tag == null || tag.isBlank()) return ResponseEntity.badRequest().body(Map.of("error", "EMPTY_TAG"));
+        String tag = req.telegramTag != null && !req.telegramTag.isBlank() ? normalizeTag(req.telegramTag) : null;
+        String fio = req.fio != null && !req.fio.isBlank() ? req.fio.trim() : null;
+        
+        if (tag == null && fio == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "EMPTY_IDENTIFIER"));
+        }
+        if (fio != null && (req.subgroup == null || (req.subgroup != 1 && req.subgroup != 2))) {
+            return ResponseEntity.badRequest().body(Map.of("error", "INVALID_SUBGROUP"));
+        }
 
         try (var s = HibernateUtil.getSessionFactory().openSession()) {
-            Student st = s.createQuery("FROM Student WHERE telegramTag = :tag", Student.class)
-                    .setParameter("tag", tag)
-                    .setMaxResults(1)
-                    .uniqueResult();
+            Student st = null;
+            if (tag != null) {
+                st = s.createQuery("FROM Student WHERE telegramTag = :tag", Student.class)
+                        .setParameter("tag", tag)
+                        .setMaxResults(1)
+                        .uniqueResult();
+            }
+            if (st == null && fio != null) {
+                st = s.createQuery("FROM Student WHERE fio = :fio AND subgroupNum = :subgroup", Student.class)
+                        .setParameter("fio", fio)
+                        .setParameter("subgroup", req.subgroup)
+                        .setMaxResults(1)
+                        .uniqueResult();
+            }
+            
             if (st == null) {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("state", "NOT_REGISTERED"));
             }
@@ -143,20 +182,40 @@ public class AuthController {
 
     public static class SetPasswordRequest {
         public String telegramTag;
+        public String fio;
+        public Integer subgroup;
         public String newPassword;
         public boolean rememberDevice;
     }
 
     @PostMapping("/set-password")
     public ResponseEntity<?> setPassword(@RequestBody @Valid SetPasswordRequest req, HttpServletResponse response) {
-        String tag = normalizeTag(req.telegramTag);
-        if (tag == null || tag.isBlank()) return ResponseEntity.badRequest().body(Map.of("error", "EMPTY_TAG"));
+        String tag = req.telegramTag != null && !req.telegramTag.isBlank() ? normalizeTag(req.telegramTag) : null;
+        String fio = req.fio != null && !req.fio.isBlank() ? req.fio.trim() : null;
+        
+        if (tag == null && fio == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "EMPTY_IDENTIFIER"));
+        }
+        if (fio != null && (req.subgroup == null || (req.subgroup != 1 && req.subgroup != 2))) {
+            return ResponseEntity.badRequest().body(Map.of("error", "INVALID_SUBGROUP"));
+        }
 
         try (var s = HibernateUtil.getSessionFactory().openSession()) {
-            Student st = s.createQuery("FROM Student WHERE telegramTag = :tag", Student.class)
-                    .setParameter("tag", tag)
-                    .setMaxResults(1)
-                    .uniqueResult();
+            Student st = null;
+            if (tag != null) {
+                st = s.createQuery("FROM Student WHERE telegramTag = :tag", Student.class)
+                        .setParameter("tag", tag)
+                        .setMaxResults(1)
+                        .uniqueResult();
+            }
+            if (st == null && fio != null) {
+                st = s.createQuery("FROM Student WHERE fio = :fio AND subgroupNum = :subgroup", Student.class)
+                        .setParameter("fio", fio)
+                        .setParameter("subgroup", req.subgroup)
+                        .setMaxResults(1)
+                        .uniqueResult();
+            }
+            
             if (st == null) {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("state", "NOT_REGISTERED"));
             }

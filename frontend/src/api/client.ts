@@ -37,7 +37,9 @@ export const api = {
       body: JSON.stringify({ superKey }),
     } as any),
   registerSuperAdmin: (payload: {
-    telegramTag: string;
+    telegramTag?: string;
+    fio?: string;
+    subgroup?: number;
     password: string;
     rememberDevice: boolean;
     superKey: string;
@@ -49,25 +51,31 @@ export const api = {
         body: JSON.stringify({
           superKey: payload.superKey,
           telegramTag: payload.telegramTag,
+          fio: payload.fio,
+          subgroup: payload.subgroup,
           password: payload.password,
           rememberDevice: payload.rememberDevice,
         }),
       } as any,
     ),
-  login: (payload: { telegramTag: string; password: string | null; rememberDevice: boolean }) =>
+  login: (payload: { telegramTag?: string; fio?: string; subgroup?: number; password: string | null; rememberDevice: boolean }) =>
     apiFetch<any>('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({
         telegramTag: payload.telegramTag,
+        fio: payload.fio,
+        subgroup: payload.subgroup,
         password: payload.password,
         rememberDevice: payload.rememberDevice,
       }),
     } as any),
-  setPassword: (payload: { telegramTag: string; newPassword: string; rememberDevice: boolean }) =>
+  setPassword: (payload: { telegramTag?: string; fio?: string; subgroup?: number; newPassword: string; rememberDevice: boolean }) =>
     apiFetch<any>('/api/auth/set-password', {
       method: 'POST',
       body: JSON.stringify({
         telegramTag: payload.telegramTag,
+        fio: payload.fio,
+        subgroup: payload.subgroup,
         newPassword: payload.newPassword,
         rememberDevice: payload.rememberDevice,
       }),

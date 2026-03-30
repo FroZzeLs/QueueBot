@@ -92,7 +92,7 @@ public class AdminController {
     }
 
     @DeleteMapping("/students/{id}")
-    public ResponseEntity<?> deleteStudent(@PathVariable long id) {
+    public ResponseEntity<?> deleteStudent(@PathVariable("id") long id) {
         Student me = AuthContext.getCurrentStudent();
         if (!canAdmin(me)) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "UNAUTHORIZED"));
         if (!canSuper(me) && me.getId() != id) {
@@ -122,7 +122,7 @@ public class AdminController {
     }
 
     @PatchMapping("/students/{id}/subgroup")
-    public ResponseEntity<?> updateStudentSubgroup(@PathVariable long id, @RequestBody UpdateStudentSubgroupRequest req) {
+    public ResponseEntity<?> updateStudentSubgroup(@PathVariable("id") long id, @RequestBody UpdateStudentSubgroupRequest req) {
         Student me = AuthContext.getCurrentStudent();
         if (!canAdmin(me)) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "UNAUTHORIZED"));
         if (req.subgroup != 1 && req.subgroup != 2) return ResponseEntity.badRequest().body(Map.of("error", "BAD_SUBGROUP"));
@@ -132,6 +132,101 @@ public class AdminController {
             Student st = s.get(Student.class, id);
             if (st == null) return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "NOT_FOUND"));
             st.setSubgroup(req.subgroup);
+            s.merge(st);
+            tx.commit();
+            return ResponseEntity.ok(Map.of("ok", true));
+        }
+    }
+
+    public static class UpdateStudentRequest {
+        public String fio;
+        public String telegramTag;
+        public Integer subgroup;
+    }
+
+    @PutMapping("/students/{id}")
+    public ResponseEntity<?> updateStudent(@PathVariable("id") long id, @RequestBody UpdateStudentRequest req) {
+        Student me = AuthContext.getCurrentStudent();
+        if (!canAdmin(me)) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "UNAUTHORIZED"));
+        
+        if (req.fio != null && req.fio.isBlank()) return ResponseEntity.badRequest().body(Map.of("error", "EMPTY_FIO"));
+        if (req.subgroup != null && (req.subgroup != 1 && req.subgroup != 2)) 
+            return ResponseEntity.badRequest().body(Map.of("error", "BAD_SUBGROUP"));
+
+        try (Session s = HibernateUtil.getSessionFactory().openSession()) {
+            Transaction tx = s.beginTransaction();
+            Student st = s.get(Student.class, id);
+            if (st == null) return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "NOT_FOUND"));
+            
+            // Проверка уникальности telegramTag если он меняется
+            if (req.telegramTag != null && !req.telegramTag.isBlank()) {
+                String newTag = normalizeTag(req.telegramTag);
+                if (!newTag.equals(st.getTelegramTag())) {
+                    Student existing = s.createQuery("FROM Student WHERE telegramTag = :tag", Student.class)
+                            .setParameter("tag", newTag)
+                            .setMaxResults(1)
+                            .uniqueResult();
+                    if (existing != null && !existing.getId().equals(id)) {
+                        tx.rollback();
+                        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", "TAG_ALREADY_EXISTS"));
+                    }
+                }
+                st.setTelegramTag(newTag);
+            }
+            
+            if (req.fio != null && !req.fio.isBlank()) {
+                st.setFio(req.fio.trim());
+            }
+            if (req.subgroup != null) {
+                st.setSubgroup(req.subgroup);
+            }
+            
+            s.merge(st);
+            tx.commit();
+            return ResponseEntity.ok(Map.of("ok", true));
+        }
+    }
+
+    @PutMapping("/me")
+    public ResponseEntity<?> updateMe(@RequestBody UpdateStudentRequest req) {
+        Student me = AuthContext.getCurrentStudent();
+        if (me == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "UNAUTHORIZED"));
+        
+        if (req.fio != null && req.fio.isBlank()) return ResponseEntity.badRequest().body(Map.of("error", "EMPTY_FIO"));
+        if (req.subgroup != null && (req.subgroup != 1 && req.subgroup != 2)) 
+            return ResponseEntity.badRequest().body(Map.of("error", "BAD_SUBGROUP"));
+
+        try (Session s = HibernateUtil.getSessionFactory().openSession()) {
+            Transaction tx = s.beginTransaction();
+            Student st = s.get(Student.class, me.getId());
+            if (st == null) {
+                tx.rollback();
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "NOT_FOUND"));
+            }
+            
+            // Проверка уникальности telegramTag если он меняется
+            if (req.telegramTag != null && !req.telegramTag.isBlank()) {
+                String newTag = normalizeTag(req.telegramTag);
+                if (!newTag.equals(st.getTelegramTag())) {
+                    Student existing = s.createQuery("FROM Student WHERE telegramTag = :tag", Student.class)
+                            .setParameter("tag", newTag)
+                            .setMaxResults(1)
+                            .uniqueResult();
+                    if (existing != null && !existing.getId().equals(st.getId())) {
+                        tx.rollback();
+                        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", "TAG_ALREADY_EXISTS"));
+                    }
+                }
+                st.setTelegramTag(newTag);
+            }
+            
+            if (req.fio != null && !req.fio.isBlank()) {
+                st.setFio(req.fio.trim());
+            }
+            if (req.subgroup != null) {
+                st.setSubgroup(req.subgroup);
+            }
+            
             s.merge(st);
             tx.commit();
             return ResponseEntity.ok(Map.of("ok", true));
@@ -189,7 +284,7 @@ public class AdminController {
     }
 
     @DeleteMapping("/subjects/{id}")
-    public ResponseEntity<?> deleteSubject(@PathVariable long id) {
+    public ResponseEntity<?> deleteSubject(@PathVariable("id") long id) {
         Student me = AuthContext.getCurrentStudent();
         if (!canAdmin(me)) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "UNAUTHORIZED"));
 
@@ -218,7 +313,7 @@ public class AdminController {
     }
 
     @PostMapping("/subjects/{subjectId}/brigades")
-    public ResponseEntity<?> createBrigades(@PathVariable long subjectId, @RequestBody BrigadesCreateRequest req) {
+    public ResponseEntity<?> createBrigades(@PathVariable("subjectId") long subjectId, @RequestBody BrigadesCreateRequest req) {
         Student me = AuthContext.getCurrentStudent();
         if (!canAdmin(me)) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "UNAUTHORIZED"));
 

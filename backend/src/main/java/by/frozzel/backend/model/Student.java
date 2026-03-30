@@ -27,7 +27,7 @@ public class Student {
     @Column(name = "subgroup_num", nullable = false)
     private int subgroup;
 
-    @Column(name = "telegram_tag", nullable = false, unique = true)
+    @Column(name = "telegram_tag", unique = true)
     private String telegramTag;
 
     @Column(name = "chat_id")

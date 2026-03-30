@@ -6,6 +6,10 @@ import {
   Checkbox,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   FormControl,
   InputLabel,
   MenuItem,
@@ -15,7 +19,10 @@ import {
   Tabs,
   TextField,
   Typography,
+  IconButton,
 } from '@mui/material';
+import EditIcon from '@mui/icons-material/Edit';
+import DeleteIcon from '@mui/icons-material/Delete';
 import { api, type ApiMe } from '../api/client';
 
 type StudentRow = {
@@ -28,6 +35,15 @@ type StudentRow = {
 };
 
 type SubjectRow = { id: number; name: string; deliveryType: string };
+
+// Edit student modal state
+type EditStudentState = {
+  open: boolean;
+  studentId: number | null;
+  fio: string;
+  telegramTag: string;
+  subgroup: number;
+};
 
 export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiMe | null) => void }) {
   const [tab, setTab] = useState(0);
@@ -44,6 +60,18 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
   // add subject
   const [newSubjectName, setNewSubjectName] = useState('');
   const [newSubjectDeliveryType, setNewSubjectDeliveryType] = useState<'INDIVIDUAL' | 'BRIGADE'>('INDIVIDUAL');
+
+  // edit student dialog
+  const [editDialog, setEditDialog] = useState<EditStudentState>({
+    open: false,
+    studentId: null,
+    fio: '',
+    telegramTag: '',
+    subgroup: 1,
+  });
+
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteStudentId, setDeleteStudentId] = useState<number | null>(null);
 
   const brigadeSubjects = useMemo(() => subjects.filter((s) => s.deliveryType === 'BRIGADE'), [subjects]);
   const [selectedBrigadeSubjectId, setSelectedBrigadeSubjectId] = useState<number | null>(brigadeSubjects[0]?.id ?? null);
@@ -105,6 +133,60 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
     setNewFio('');
     setNewTag('');
     setNewSubgroup(1);
+  }
+
+  function openEditDialog(student: StudentRow) {
+    setEditDialog({
+      open: true,
+      studentId: student.id,
+      fio: student.fio,
+      telegramTag: student.telegramTag || '',
+      subgroup: student.subgroup,
+    });
+  }
+
+  async function handleSaveEdit() {
+    setError(null);
+    if (!editDialog.studentId) return;
+    
+    const payload = {
+      fio: editDialog.fio,
+      telegramTag: editDialog.telegramTag,
+      subgroup: editDialog.subgroup,
+    };
+    
+    const res = await fetch(`/api/admin/students/${editDialog.studentId}`, {
+      method: 'PUT',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(String(data?.error || data?.message || 'Failed'));
+    
+    setEditDialog({ ...editDialog, open: false });
+    await fetchStudents();
+  }
+
+  async function handleDeleteStudent() {
+    setError(null);
+    if (!deleteStudentId) return;
+    
+    const res = await fetch(`/api/admin/students/${deleteStudentId}`, {
+      method: 'DELETE',
+      credentials: 'include',
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(String(data?.error || data?.message || 'Failed'));
+    
+    setDeleteDialogOpen(false);
+    setDeleteStudentId(null);
+    await fetchStudents();
+  }
+
+  function confirmDelete(studentId: number) {
+    setDeleteStudentId(studentId);
+    setDeleteDialogOpen(true);
   }
 
   async function handleAddSubject() {
@@ -266,22 +348,22 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
               {students.map((st) => (
                 <Box key={st.id} sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}>
                   <Typography>
-                    {st.fio} · подгруппа {st.subgroup} · @{st.telegramTag}
+                    {st.fio} · подгруппа {st.subgroup} · @{st.telegramTag || 'нет тега'}
                   </Typography>
                   <Stack direction="row" spacing={1} alignItems="center">
                     {st.isSuperAdmin ? <Chip label="Super" color="secondary" size="small" /> : null}
                     {st.isAdmin ? <Chip label="Админ" color="primary" size="small" /> : null}
-                    <FormControl size="small" sx={{ minWidth: 140 }}>
-                      <InputLabel>Подгруппа</InputLabel>
-                      <Select
-                        label="Подгруппа"
-                        value={st.subgroup}
-                        onChange={(e) => handleUpdateSubgroup(st.id, Number(e.target.value) as any)}
-                      >
-                        <MenuItem value={1}>1</MenuItem>
-                        <MenuItem value={2}>2</MenuItem>
-                      </Select>
-                    </FormControl>
+                    <IconButton size="small" onClick={() => openEditDialog(st)} disabled={st.isSuperAdmin && st.id !== me.id}>
+                      <EditIcon />
+                    </IconButton>
+                    <IconButton 
+                      size="small" 
+                      color="error" 
+                      onClick={() => confirmDelete(st.id)}
+                      disabled={st.isSuperAdmin}
+                    >
+                      <DeleteIcon />
+                    </IconButton>
                   </Stack>
                 </Box>
               ))}
@@ -443,6 +525,55 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
           </Card>
         </Stack>
       ) : null}
+
+      {/* Edit Student Dialog */}
+      <Dialog open={editDialog.open} onClose={() => setEditDialog({ ...editDialog, open: false })} maxWidth="sm" fullWidth>
+        <DialogTitle>Редактировать студента</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <TextField
+              label="ФИО"
+              value={editDialog.fio}
+              onChange={(e) => setEditDialog({ ...editDialog, fio: e.target.value })}
+              fullWidth
+            />
+            <TextField
+              label="telegram_tag"
+              value={editDialog.telegramTag}
+              onChange={(e) => setEditDialog({ ...editDialog, telegramTag: e.target.value })}
+              fullWidth
+              placeholder="username"
+            />
+            <FormControl fullWidth>
+              <InputLabel>Подгруппа</InputLabel>
+              <Select
+                value={editDialog.subgroup}
+                label="Подгруппа"
+                onChange={(e) => setEditDialog({ ...editDialog, subgroup: Number(e.target.value) as number })}
+              >
+                <MenuItem value={1}>1</MenuItem>
+                <MenuItem value={2}>2</MenuItem>
+              </Select>
+            </FormControl>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditDialog({ ...editDialog, open: false })}>Отмена</Button>
+          <Button variant="contained" onClick={handleSaveEdit}>Сохранить</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
+        <DialogTitle>Подтверждение удаления</DialogTitle>
+        <DialogContent>
+          <Typography>Вы действительно хотите удалить этого студента?</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteDialogOpen(false)}>Отмена</Button>
+          <Button variant="contained" color="error" onClick={handleDeleteStudent}>Удалить</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

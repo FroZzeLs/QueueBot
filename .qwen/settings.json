@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker-compose *)",
+      "Bash(docker ps *)",
+      "Bash(type *)",
+      "Bash(findstr *)",
+      "Bash(sleep *)",
+      "Bash(docker network *)",
+      "Bash(docker rmi *)",
+      "Bash(true)"
+    ]
+  },
+  "$version": 3
+}

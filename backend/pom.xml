@@ -96,7 +96,15 @@
                 <version>3.4.0</version>
                 <configuration>
                     <mainClass>by.frozzel.backend.BackendMain</mainClass>
+                    <layout>JAR</layout>
                 </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>
