@@ -1,0 +1,108 @@
+export type ApiMe = {
+  telegramTag: string;
+  fio: string;
+  subgroup: number;
+  role: 'USER' | 'ADMIN' | 'SUPER_ADMIN';
+  isPasswordSet: boolean;
+};
+
+const baseUrl = ''; // same origin when served by nginx
+
+async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(baseUrl + path, {
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', ...(options?.headers ?? {}) },
+    ...options,
+  });
+
+  if (!res.ok) {
+    let data: any = null;
+    try {
+      data = await res.json();
+    } catch {
+      // ignore
+    }
+    throw new Error(data?.error || data?.state || `HTTP ${res.status}`);
+  }
+
+  return (await res.json()) as T;
+}
+
+export const api = {
+  getMe: () => apiFetch<ApiMe>('/api/auth/me'),
+  getBootstrapStatus: () => apiFetch<{ hasSuperAdmin: boolean }>('/api/auth/bootstrap-status'),
+  verifySuperKey: (superKey: string) =>
+    apiFetch<{ ok: boolean }>('/api/auth/bootstrap/verify-super-key', {
+      method: 'POST',
+      body: JSON.stringify({ superKey }),
+    } as any),
+  registerSuperAdmin: (payload: {
+    telegramTag: string;
+    password: string;
+    rememberDevice: boolean;
+    superKey: string;
+  }) =>
+    apiFetch<{ ok: boolean }>(
+      '/api/auth/bootstrap/register-super-admin',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          superKey: payload.superKey,
+          telegramTag: payload.telegramTag,
+          password: payload.password,
+          rememberDevice: payload.rememberDevice,
+        }),
+      } as any,
+    ),
+  login: (payload: { telegramTag: string; password: string | null; rememberDevice: boolean }) =>
+    apiFetch<any>('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({
+        telegramTag: payload.telegramTag,
+        password: payload.password,
+        rememberDevice: payload.rememberDevice,
+      }),
+    } as any),
+  setPassword: (payload: { telegramTag: string; newPassword: string; rememberDevice: boolean }) =>
+    apiFetch<any>('/api/auth/set-password', {
+      method: 'POST',
+      body: JSON.stringify({
+        telegramTag: payload.telegramTag,
+        newPassword: payload.newPassword,
+        rememberDevice: payload.rememberDevice,
+      }),
+    } as any),
+
+  getSubjects: () => apiFetch<Array<{ id: number; name: string; deliveryType: string }>>('/api/subjects'),
+  getActiveQueue: (params: { subjectId: number; queueKind: 'COMMON' | 'SUBGROUP'; subgroupNum?: number }) =>
+    apiFetch<any>(
+      `/api/queue/active?subjectId=${params.subjectId}&queueKind=${params.queueKind}${
+        params.subgroupNum != null ? `&subgroupNum=${params.subgroupNum}` : ''
+      }`,
+    ),
+  getBrigadeMembers: (brigadeId: number) => apiFetch<any>(`/api/brigades/${brigadeId}/members`),
+
+  leaveQueue: (payload: { subjectId: number; queueKind: string; subgroupNum?: number }) =>
+    apiFetch<any>('/api/queue/leave', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    } as any),
+
+  markLastPassed: (payload: {
+    subjectId: number;
+    queueKind: string;
+    subgroupNum?: number;
+    physicalStudentId: number;
+  }) =>
+    apiFetch<any>('/api/queue/mark-last-passed', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    } as any),
+
+  createSwapRequest: (payload: any) =>
+    apiFetch<any>('/api/swap-requests', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    } as any),
+};
+

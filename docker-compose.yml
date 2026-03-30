@@ -1,9 +1,8 @@
-version: '3.9'
 services:
   db:
     image: postgres:18-alpine
     container_name: queue_postgres
-    restart: always
+    restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -12,6 +11,41 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: ./backend
+    container_name: queue_backend
+    restart: unless-stopped
+    environment:
+      - SUPER_ADMIN_KEY=${SUPER_ADMIN_KEY:-change-me}
+      - TG_BOT_BASE_URL=http://tg-bot:8081
+      - TG_BOT_INTERNAL_SECRET=${TG_BOT_INTERNAL_SECRET:-tg-secret}
+    depends_on:
+      - db
+
+  tg-bot:
+    build:
+      context: ./tg-bot
+    container_name: queue_tg_bot
+    restart: unless-stopped
+    environment:
+      - BOT_NAME=${BOT_NAME:-}
+      - BOT_TOKEN=${BOT_TOKEN:-}
+      - BACKEND_BASE_URL=http://backend:8080
+      - TG_BOT_INTERNAL_SECRET=${TG_BOT_INTERNAL_SECRET:-tg-secret}
+    depends_on:
+      - backend
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: queue_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
 
 volumes:
   postgres_data:
