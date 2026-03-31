@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, ChangeEvent } from 'react';
 import {
   Box,
   Button,
@@ -52,6 +52,7 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
   const [loading, setLoading] = useState(true);
   const [students, setStudents] = useState<StudentRow[]>([]);
   const [subjects, setSubjects] = useState<SubjectRow[]>([]);
+  const [subjectBrigadeCounts, setSubjectBrigadeCounts] = useState<Map<number, number>>(new Map());
   const [error, setError] = useState<string | null>(null);
 
   const [newFio, setNewFio] = useState('');
@@ -72,14 +73,14 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteStudentId, setDeleteStudentId] = useState<number | null>(null);
 
-  const brigadeSubjects = subjects.filter((s) => s.deliveryType === 'BRIGADE');
+  const brigadeSubjects = subjects.filter((s: SubjectRow) => s.deliveryType === 'BRIGADE');
   const [selectedBrigadeSubjectId, setSelectedBrigadeSubjectId] = useState<number | null>(brigadeSubjects[0]?.id ?? null);
 
   const [builderSelected, setBuilderSelected] = useState<Set<number>>(new Set());
   const [groups, setGroups] = useState<number[][]>([]);
   const [brigadesLoading, setBrigadesLoading] = useState(false);
 
-  const selectedBrigadeSubject = subjects.find((s) => s.id === selectedBrigadeSubjectId) || null;
+  const selectedBrigadeSubject = subjects.find((s: SubjectRow) => s.id === selectedBrigadeSubjectId) || null;
 
   // Load brigades for selected subject
   useEffect(() => {
@@ -106,7 +107,7 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    Promise.all([fetchStudents(), fetchSubjects()])
+    Promise.all([fetchStudents(), fetchSubjects(), fetchBrigadeCounts()])
       .catch(() => {})
       .finally(() => {
         if (!alive) return;
@@ -116,6 +117,19 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
       alive = false;
     };
   }, []);
+
+  async function fetchBrigadeCounts() {
+    try {
+      const res = await api.getAllBrigadesWithSubjects();
+      const counts = new Map<number, number>();
+      for (const subj of res.subjects) {
+        counts.set(subj.subjectId, subj.brigades.length);
+      }
+      setSubjectBrigadeCounts(counts);
+    } catch (e) {
+      // ignore
+    }
+  }
 
   useEffect(() => {
     if (brigadeSubjects.length > 0 && selectedBrigadeSubjectId == null) {
@@ -239,36 +253,36 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
   }
 
   function toggleBuilderStudent(id: number) {
-    setBuilderSelected((prev) => {
-      const next = new Set(prev);
+    setBuilderSelected((prev: Set<number>) => {
+      const next = new Set<number>(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
   }
 
-  const assignedStudentIds = new Set(groups.flatMap((g) => g));
+  const assignedStudentIds = new Set(groups.flatMap((g: number[]) => g));
 
   function addGroupFromSelected() {
     if (builderSelected.size === 0) return;
-    const ids = Array.from(builderSelected).sort((a, b) => a - b);
+    const ids = Array.from<number>(builderSelected).sort((a, b) => Number(a) - Number(b));
     for (const id of ids) {
       if (assignedStudentIds.has(id)) return;
     }
-    setGroups((prev) => [...prev, ids]);
-    setBuilderSelected(new Set());
+    setGroups((prev: number[][]) => [...prev, ids]);
+    setBuilderSelected(new Set<number>());
   }
 
   function removeGroup(idx: number) {
-    setGroups((prev) => prev.filter((_, i) => i !== idx));
+    setGroups((prev: number[][]) => prev.filter((_: number[], i: number) => i !== idx));
   }
 
   async function saveBrigades() {
     if (!selectedBrigadeSubjectId) return;
     setError(null);
 
-    const allIds = new Set(students.map((s) => s.id));
-    const used = new Set(groups.flatMap((g) => g));
+    const allIds = new Set(students.map((s: StudentRow) => s.id));
+    const used = new Set(groups.flatMap((g: number[]) => g));
 
     if (used.size !== allIds.size) {
       setError('Each student must be in exactly one brigade.');
@@ -288,6 +302,7 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
     setError(null);
     setGroups([]);
     setBuilderSelected(new Set());
+    await fetchBrigadeCounts();
     await fetchSubjects();
     await fetchStudents();
   }
@@ -319,7 +334,7 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
         </Stack>
       </Stack>
 
-      <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 2 }}>
+      <Tabs value={tab} onChange={(_: React.ChangeEvent<{}>, v: number) => setTab(v)} sx={{ mb: 2 }}>
         <Tab label="Students" />
         <Tab label="Subjects" />
         <Tab label="Brigades" disabled={brigadeSubjects.length === 0} />
@@ -336,13 +351,13 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
               <TextField
                 label="Name"
                 value={newFio}
-                onChange={(e) => setNewFio(e.target.value)}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => setNewFio(e.target.value)}
                 fullWidth
               />
               <TextField
                 label="Telegram"
                 value={newTag}
-                onChange={(e) => setNewTag(e.target.value)}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => setNewTag(e.target.value)}
                 fullWidth
                 placeholder="username"
               />
@@ -351,7 +366,7 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
                 <Select
                   value={newSubgroup}
                   label="Subgroup"
-                  onChange={(e) => setNewSubgroup(Number(e.target.value))}
+                  onChange={(e: ChangeEvent<{ value: unknown }>) => setNewSubgroup(Number(e.target.value))}
                 >
                   <MenuItem value={1}>1</MenuItem>
                   <MenuItem value={2}>2</MenuItem>
@@ -373,7 +388,7 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
               Students
             </Typography>
             <Stack spacing={1}>
-              {students.map((st) => (
+              {students.map((st: StudentRow) => (
                 <Box key={st.id} sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}>
                   <Typography>
                     {st.fio} · subgroup {st.subgroup} · @{st.telegramTag || 'no tag'}
@@ -412,7 +427,7 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
               <TextField
                 label="Subject"
                 value={newSubjectName}
-                onChange={(e) => setNewSubjectName(e.target.value)}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => setNewSubjectName(e.target.value)}
                 fullWidth
               />
               <FormControl sx={{ minWidth: 220 }}>
@@ -420,7 +435,7 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
                 <Select
                   value={newSubjectDeliveryType}
                   label="Type"
-                  onChange={(e) => setNewSubjectDeliveryType(e.target.value as any)}
+                  onChange={(e: ChangeEvent<{ value: unknown }>) => setNewSubjectDeliveryType(e.target.value as 'INDIVIDUAL' | 'BRIGADE')}
                 >
                   <MenuItem value="INDIVIDUAL">Individual</MenuItem>
                   <MenuItem value="BRIGADE">Brigade</MenuItem>
@@ -442,18 +457,33 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
               Subjects
             </Typography>
             <Stack spacing={1}>
-              {subjects.map((subj) => (
-                <Box key={subj.id} sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}>
-                  <Typography>
-                    {subj.name} · {subj.deliveryType === 'BRIGADE' ? 'Brigade' : 'Individual'}
-                  </Typography>
-                  {subj.deliveryType === 'BRIGADE' ? (
-                    <Button size="small" variant="outlined" onClick={() => setSelectedBrigadeSubjectId(subj.id)}>
-                      Configure
-                    </Button>
-                  ) : null}
-                </Box>
-              ))}
+              {subjects.map((subj: SubjectRow) => {
+                const brigadeCount = subjectBrigadeCounts.get(subj.id) || 0;
+                return (
+                  <Box key={subj.id} sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, alignItems: 'center' }}>
+                    <Typography>
+                      {subj.name} · {subj.deliveryType === 'BRIGADE' ? 'Brigade' : 'Individual'}
+                      {subj.deliveryType === 'BRIGADE' && brigadeCount > 0 && (
+                        <Chip
+                          label={`${brigadeCount} brigade${brigadeCount > 1 ? 's' : ''}`}
+                          size="small"
+                          sx={{ ml: 1 }}
+                          color="primary"
+                          variant="outlined"
+                        />
+                      )}
+                    </Typography>
+                    {subj.deliveryType === 'BRIGADE' ? (
+                      <Button size="small" variant="outlined" onClick={() => {
+                        setSelectedBrigadeSubjectId(subj.id);
+                        setTab(2); // Switch to Brigades tab
+                      }}>
+                        Configure
+                      </Button>
+                    ) : null}
+                  </Box>
+                );
+              })}
               {subjects.length === 0 ? (
                 <Typography color="text.secondary">No subjects.</Typography>
               ) : null}
@@ -465,16 +495,30 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
       {tab === 2 ? (
         <Stack spacing={2}>
           <Card sx={{ p: 2.5, borderRadius: 3 }}>
-            <Typography fontWeight={700} sx={{ mb: 1.5 }} variant="h6">
-              Create Brigades
-            </Typography>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
+              <Typography fontWeight={700} variant="h6">
+                Create Brigades
+              </Typography>
+              {selectedBrigadeSubject && (
+                <Chip
+                  label={selectedBrigadeSubject.name}
+                  color="primary"
+                  size="small"
+                  onDelete={() => {
+                    setSelectedBrigadeSubjectId(null);
+                    setTab(1); // Switch back to Subjects tab
+                  }}
+                  deleteIcon={<ArrowBack />}
+                />
+              )}
+            </Box>
             {selectedBrigadeSubject ? (
-              <Typography color="text.secondary" sx={{ mb: 2 }}>
-                Subject: <b>{selectedBrigadeSubject.name}</b>
+              <Typography color="text.secondary">
+                Configure brigades for <b>{selectedBrigadeSubject.name}</b>
               </Typography>
             ) : (
               <Typography color="text.secondary">
-                Select a subject to configure brigades.
+                Select a subject from the Subjects tab to configure brigades.
               </Typography>
             )}
 
@@ -484,7 +528,7 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
                   New Brigade
                 </Typography>
                 <Stack spacing={1} sx={{ maxHeight: 320, overflow: 'auto' }}>
-                  {students.map((st) => {
+                  {students.map((st: StudentRow) => {
                     const disabled = assignedStudentIds.has(st.id);
                     return (
                       <Box key={st.id} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -511,12 +555,12 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
                 </Typography>
                 <Stack spacing={1}>
                   {groups.length === 0 ? <Typography color="text.secondary">No brigades yet.</Typography> : null}
-                  {groups.map((g, idx) => (
+                  {groups.map((g: number[], idx: number) => (
                     <Box key={idx} sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, alignItems: 'center' }}>
                       <Typography variant="body2" sx={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {idx + 1}.{' '}
                         {g
-                          .map((sid) => students.find((s) => s.id === sid)?.fio.split(' ')[0])
+                          .map((sid: number) => students.find((s: StudentRow) => s.id === sid)?.fio.split(' ')[0])
                           .filter(Boolean)
                           .join(', ')}
                       </Typography>
@@ -531,12 +575,24 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
                   <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
                     Assigned: {assignedStudentIds.size} / {students.length}
                   </Typography>
-                  <Button variant="contained" onClick={saveBrigades} disabled={!selectedBrigadeSubjectId}>
-                    Save
-                  </Button>
+                  <Stack direction="row" spacing={1}>
+                    <Button variant="contained" onClick={saveBrigades} disabled={!selectedBrigadeSubjectId || groups.length === 0}>
+                      Save Brigades
+                    </Button>
+                    {groups.length > 0 && (
+                      <Button variant="outlined" color="error" onClick={() => setGroups([])}>
+                        Clear
+                      </Button>
+                    )}
+                  </Stack>
                   {error && (
                     <Typography color="error" sx={{ mt: 1 }}>
                       {error}
+                    </Typography>
+                  )}
+                  {selectedBrigadeSubjectId && subjectBrigadeCounts.get(selectedBrigadeSubjectId) > 0 && groups.length === 0 && (
+                    <Typography color="success.main" sx={{ mt: 1 }}>
+                      Brigades saved for this subject.
                     </Typography>
                   )}
                 </Box>
@@ -553,13 +609,13 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
               Admin Management
             </Typography>
             <Stack spacing={1}>
-              {students.map((st) => (
+              {students.map((st: StudentRow) => (
                 <Box key={st.id} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <Typography>{st.fio}</Typography>
                   <Checkbox
                     checked={st.isAdmin}
                     disabled={st.isSuperAdmin}
-                    onChange={(e) => handleToggleAdmin(st.id, e.target.checked)}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => handleToggleAdmin(st.id, e.target.checked)}
                   />
                 </Box>
               ))}
@@ -575,13 +631,13 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
             <TextField
               label="Name"
               value={editDialog.fio}
-              onChange={(e) => setEditDialog({ ...editDialog, fio: e.target.value })}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => setEditDialog({ ...editDialog, fio: e.target.value })}
               fullWidth
             />
             <TextField
               label="Telegram"
               value={editDialog.telegramTag}
-              onChange={(e) => setEditDialog({ ...editDialog, telegramTag: e.target.value })}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => setEditDialog({ ...editDialog, telegramTag: e.target.value })}
               fullWidth
               placeholder="username"
             />
@@ -590,7 +646,7 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
               <Select
                 value={editDialog.subgroup}
                 label="Subgroup"
-                onChange={(e) => setEditDialog({ ...editDialog, subgroup: Number(e.target.value) })}
+                onChange={(e: ChangeEvent<{ value: unknown }>) => setEditDialog({ ...editDialog, subgroup: Number(e.target.value) })}
               >
                 <MenuItem value={1}>1</MenuItem>
                 <MenuItem value={2}>2</MenuItem>

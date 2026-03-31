@@ -1,4 +1,5 @@
 export type ApiMe = {
+  id: number;
   telegramTag: string;
   fio: string;
   subgroup: number;
@@ -92,6 +93,10 @@ export const api = {
   getBrigadesForSubject: (subjectId: number) =>
     apiFetch<{ brigades: Array<{ id: number; displayName: string; memberIds: number[]; memberNames: string[] }> }>(
       `/api/brigades/subject?subjectId=${subjectId}`
+    ),
+  getAllBrigadesWithSubjects: () =>
+    apiFetch<{ subjects: Array<{ subjectId: number; subjectName: string; brigades: Array<{ id: number; displayName: string; memberIds: number[] }> }> }>(
+      `/api/brigades/all-with-subjects`
     ),
 
   leaveQueue: (payload: { subjectId: number; queueKind: string; subgroupNum?: number }) =>

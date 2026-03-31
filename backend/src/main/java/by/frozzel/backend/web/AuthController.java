@@ -243,6 +243,7 @@ public class AuthController {
         Student st = AuthContext.getCurrentStudent();
         if (st == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "UNAUTHORIZED"));
         return ResponseEntity.ok(Map.of(
+                "id", st.getId(),
                 "telegramTag", st.getTelegramTag(),
                 "fio", st.getFio(),
                 "subgroup", st.getSubgroup(),

@@ -4,6 +4,7 @@ import by.frozzel.backend.config.HibernateUtil;
 import by.frozzel.backend.model.Brigade;
 import by.frozzel.backend.model.BrigadeMember;
 import by.frozzel.backend.model.Student;
+import by.frozzel.backend.model.Subject;
 import org.hibernate.Session;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -88,6 +89,55 @@ public class BrigadeController {
                 res.add(Map.of("id", st.getId(), "fio", st.getFio(), "telegramTag", st.getTelegramTag()));
             }
             return ResponseEntity.ok(Map.of("brigadeId", brigadeId, "members", res));
+        }
+    }
+
+    @GetMapping("/brigades/all-with-subjects")
+    public ResponseEntity<?> getAllBrigadesWithSubjects() {
+        try (Session s = HibernateUtil.getSessionFactory().openSession()) {
+            List<Brigade> allBrigades = s.createQuery(
+                            "FROM Brigade b ORDER BY b.subject.name ASC, b.sortKey ASC",
+                            Brigade.class)
+                    .list();
+            
+            Map<Long, List<Map<String, Object>>> subjectBrigades = new HashMap<>();
+            for (Brigade b : allBrigades) {
+                long subjectId = b.getSubject().getId();
+                String subjectName = b.getSubject().getName();
+                
+                List<BrigadeMember> ms = s.createQuery(
+                                "FROM BrigadeMember bm WHERE bm.brigade.id = :bid",
+                                BrigadeMember.class)
+                        .setParameter("bid", b.getId())
+                        .list();
+                
+                List<Long> memberIds = new ArrayList<>();
+                for (BrigadeMember bm : ms) {
+                    memberIds.add(bm.getStudent().getId());
+                }
+                
+                Map<String, Object> brigadeInfo = Map.of(
+                        "id", b.getId(),
+                        "displayName", b.getDisplayName(),
+                        "memberIds", memberIds
+                );
+                
+                subjectBrigades
+                    .computeIfAbsent(subjectId, k -> new ArrayList<>())
+                    .add(brigadeInfo);
+            }
+            
+            List<Map<String, Object>> result = new ArrayList<>();
+            for (Map.Entry<Long, List<Map<String, Object>>> entry : subjectBrigades.entrySet()) {
+                Subject subj = s.get(Subject.class, entry.getKey());
+                result.add(Map.of(
+                        "subjectId", entry.getKey(),
+                        "subjectName", subj.getName(),
+                        "brigades", entry.getValue()
+                ));
+            }
+            
+            return ResponseEntity.ok(Map.of("subjects", result));
         }
     }
 }
