@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   Box,
   Button,
@@ -19,7 +19,7 @@ import {
   IconButton,
 } from '@mui/material';
 import { Brightness4, Brightness7 } from '@mui/icons-material';
-import { api, type ApiMe } from '../api/client';
+import { api, type ApiMe, type QueueUpdateEvent } from '../api/client';
 import { useTheme } from '../theme/themeContext';
 
 type QueueItem =
@@ -36,6 +36,8 @@ export function QueuePage({ me }: { me: ApiMe; onMeChange?: (me: ApiMe) => void 
   const [queueItems, setQueueItems] = useState<any[]>([]);
   const [queueLoading, setQueueLoading] = useState(false);
   const [queueDeliveryType, setQueueDeliveryType] = useState<'INDIVIDUAL' | 'BRIGADE'>('INDIVIDUAL');
+  const [inQueue, setInQueue] = useState<boolean>(false);
+  const [statusLoading, setStatusLoading] = useState(false);
 
   const [swapDialogOpen, setSwapDialogOpen] = useState(false);
   const [selectedTargetStudentId, setSelectedTargetStudentId] = useState<number | ''>('');
@@ -46,8 +48,10 @@ export function QueuePage({ me }: { me: ApiMe; onMeChange?: (me: ApiMe) => void 
 
   const [markDialogOpen, setMarkDialogOpen] = useState(false);
   const [markPhysicalStudentId, setMarkPhysicalStudentId] = useState<number | ''>('');
+  const [markBrigadeId, setMarkBrigadeId] = useState<number | ''>('');
   const [markOptionsLoading, setMarkOptionsLoading] = useState(false);
   const [markOptions, setMarkOptions] = useState<Array<{ id: number; fio: string }>>([]);
+  const [markBrigadeOptions, setMarkBrigadeOptions] = useState<Array<{ id: number; displayName: string }>>([]);
 
   const isAdminLike = me.role === 'ADMIN' || me.role === 'SUPER_ADMIN';
   const selectedSubject = subjects.find((s) => s.id === selectedSubjectId) || null;
@@ -70,6 +74,17 @@ export function QueuePage({ me }: { me: ApiMe; onMeChange?: (me: ApiMe) => void 
     }
   }
 
+  async function refreshQueueStatus() {
+    if (selectedSubjectId == null) return;
+    setStatusLoading(true);
+    try {
+      const status = await api.getQueueStatus({ subjectId: selectedSubjectId, queueKind, subgroupNum: queueKind === 'SUBGROUP' ? subgroupNum : undefined });
+      setInQueue(status.inQueue ?? false);
+    } finally {
+      setStatusLoading(false);
+    }
+  }
+
   useEffect(() => {
     let alive = true;
     setLoading(true);
@@ -87,10 +102,52 @@ export function QueuePage({ me }: { me: ApiMe; onMeChange?: (me: ApiMe) => void 
     refreshQueue().catch(() => {});
   }, [selectedSubjectId, queueKind, subgroupNum, selectedSubject?.deliveryType]);
 
+  useEffect(() => {
+    refreshQueueStatus().catch(() => {});
+  }, [selectedSubjectId, queueKind, subgroupNum, selectedSubject?.deliveryType]);
+
+  useEffect(() => {
+    const eventSource = api.streamQueueUpdates();
+    
+    eventSource.onmessage = (event) => {
+      try {
+        const data: QueueUpdateEvent = JSON.parse(event.data);
+        // Check if this update is for the currently selected subject/queue
+        if (data.subjectId === selectedSubjectId &&
+            data.queueKind === queueKind &&
+            data.subgroupNum === (queueKind === 'SUBGROUP' ? subgroupNum : null)) {
+          refreshQueue();
+          refreshQueueStatus();
+        }
+      } catch (e) {
+        console.error('Failed to parse SSE message:', e);
+      }
+    };
+
+    eventSource.onerror = (error) => {
+      console.error('SSE connection error:', error);
+      eventSource.close();
+    };
+
+    return () => {
+      eventSource.close();
+    };
+  }, [selectedSubjectId, queueKind, subgroupNum]);
+
+  useEffect(() => {
+    refreshQueueStatus().catch(() => {});
+  }, [selectedSubjectId, queueKind, subgroupNum, selectedSubject?.deliveryType]);
+
   async function handleLeave() {
     if (!selectedSubjectId) return;
     await api.leaveQueue({ subjectId: selectedSubjectId, queueKind, subgroupNum: queueKind === 'SUBGROUP' ? subgroupNum : undefined });
-    await refreshQueue();
+    await Promise.all([refreshQueue(), refreshQueueStatus()]);
+  }
+
+  async function handleJoin() {
+    if (!selectedSubjectId) return;
+    await api.joinQueue({ subjectId: selectedSubjectId, queueKind, subgroupNum: queueKind === 'SUBGROUP' ? subgroupNum : undefined });
+    await Promise.all([refreshQueue(), refreshQueueStatus()]);
   }
 
   async function openSwapDialog() {
@@ -141,7 +198,9 @@ export function QueuePage({ me }: { me: ApiMe; onMeChange?: (me: ApiMe) => void 
     if (!selectedSubjectId || !selectedSubject) return;
     setMarkDialogOpen(true);
     setMarkPhysicalStudentId('');
+    setMarkBrigadeId('');
     setMarkOptions([]);
+    setMarkBrigadeOptions([]);
     if (selectedSubject.deliveryType === 'INDIVIDUAL') {
       const opts = (queueItems as any[])
         .filter((it) => it.id != null)
@@ -151,29 +210,32 @@ export function QueuePage({ me }: { me: ApiMe; onMeChange?: (me: ApiMe) => void 
       return;
     }
 
-    const brigadeIds = (queueItems as any[]).map((it) => it.id as number);
-    setMarkOptionsLoading(true);
-    try {
-      const all: Array<{ id: number; fio: string }> = [];
-      for (const bid of brigadeIds) {
-        const res = await api.getBrigadeMembers(bid);
-        const ms = res.members || [];
-        for (const m of ms) all.push({ id: m.id, fio: m.fio });
-      }
-      setMarkOptions(all);
-    } finally {
-      setMarkOptionsLoading(false);
-    }
+    // For brigade queues, show brigades directly
+    const brigadeOpts = (queueItems as any[])
+      .filter((it) => it.id != null)
+      .map((it) => ({ id: it.id as number, displayName: it.displayName as string }));
+    setMarkBrigadeOptions(brigadeOpts);
+    setMarkOptionsLoading(false);
   }
 
   async function handleMarkLastPassed() {
-    if (!selectedSubjectId || markPhysicalStudentId === '' || !selectedSubject) return;
-    await api.markLastPassed({
+    if (!selectedSubjectId || !selectedSubject) return;
+    
+    const payload: any = {
       subjectId: selectedSubjectId,
       queueKind,
       subgroupNum: queueKind === 'SUBGROUP' ? subgroupNum : undefined,
-      physicalStudentId: markPhysicalStudentId,
-    });
+    };
+    
+    if (selectedSubject.deliveryType === 'INDIVIDUAL') {
+      if (markPhysicalStudentId === '') return;
+      payload.physicalStudentId = markPhysicalStudentId;
+    } else {
+      if (markBrigadeId === '') return;
+      payload.brigadeId = markBrigadeId;
+    }
+    
+    await api.markLastPassed(payload);
     setMarkDialogOpen(false);
     await refreshQueue();
   }
@@ -263,9 +325,15 @@ export function QueuePage({ me }: { me: ApiMe; onMeChange?: (me: ApiMe) => void 
                   </Select>
                 </FormControl>
               ) : null}
-              <Button variant="outlined" onClick={handleLeave}>
-                Leave
-              </Button>
+              {inQueue ? (
+                <Button variant="outlined" onClick={handleLeave} disabled={statusLoading}>
+                  Leave
+                </Button>
+              ) : (
+                <Button variant="contained" onClick={handleJoin} disabled={statusLoading}>
+                  Join
+                </Button>
+              )}
               <Button variant="contained" onClick={openSwapDialog} disabled={!selectedSubjectId}>
                 Swap
               </Button>
@@ -377,12 +445,8 @@ export function QueuePage({ me }: { me: ApiMe; onMeChange?: (me: ApiMe) => void 
       <Dialog open={markDialogOpen} onClose={() => setMarkDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Mark Last Passed</DialogTitle>
         <DialogContent>
-          {markOptionsLoading ? (
-            <Box display="flex" justifyContent="center" p={2}>
-              <CircularProgress />
-            </Box>
-          ) : (
-            <FormControl fullWidth>
+          {!selectedSubject ? null : selectedSubject.deliveryType === 'INDIVIDUAL' ? (
+            <FormControl fullWidth sx={{ mt: 1 }}>
               <InputLabel>Student</InputLabel>
               <Select
                 label="Student"
@@ -396,13 +460,32 @@ export function QueuePage({ me }: { me: ApiMe; onMeChange?: (me: ApiMe) => void 
                 ))}
               </Select>
             </FormControl>
+          ) : (
+            <FormControl fullWidth sx={{ mt: 1 }}>
+              <InputLabel>Brigade</InputLabel>
+              <Select
+                label="Brigade"
+                value={markBrigadeId}
+                onChange={(e) => setMarkBrigadeId(Number(e.target.value))}
+              >
+                {markBrigadeOptions.map((o) => (
+                  <MenuItem key={o.id} value={o.id}>
+                    {o.displayName}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
           )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setMarkDialogOpen(false)} variant="outlined">
             Cancel
           </Button>
-          <Button onClick={handleMarkLastPassed} variant="contained" disabled={markPhysicalStudentId === ''}>
+          <Button
+            onClick={handleMarkLastPassed}
+            variant="contained"
+            disabled={selectedSubject?.deliveryType === 'INDIVIDUAL' ? markPhysicalStudentId === '' : markBrigadeId === ''}
+          >
             Save
           </Button>
         </DialogActions>

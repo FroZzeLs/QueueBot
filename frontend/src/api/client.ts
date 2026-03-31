@@ -7,6 +7,12 @@ export type ApiMe = {
   isPasswordSet: boolean;
 };
 
+export type QueueUpdateEvent = {
+  subjectId: number;
+  queueKind: string;
+  subgroupNum: number | null;
+};
+
 const baseUrl = ''; // same origin when served by nginx
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
@@ -105,11 +111,24 @@ export const api = {
       body: JSON.stringify(payload),
     } as any),
 
+  joinQueue: (payload: { subjectId: number; queueKind: string; subgroupNum?: number }) =>
+    apiFetch<any>('/api/queue/join', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    } as any),
+
+  getQueueStatus: (payload: { subjectId: number; queueKind: string; subgroupNum?: number }) =>
+    apiFetch<any>('/api/queue/status', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    } as any),
+
   markLastPassed: (payload: {
     subjectId: number;
     queueKind: string;
     subgroupNum?: number;
-    physicalStudentId: number;
+    physicalStudentId?: number;
+    brigadeId?: number;
   }) =>
     apiFetch<any>('/api/queue/mark-last-passed', {
       method: 'POST',
@@ -121,5 +140,9 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     } as any),
+
+  streamQueueUpdates: () => {
+    return new EventSource('/api/queue/stream');
+  },
 };
 

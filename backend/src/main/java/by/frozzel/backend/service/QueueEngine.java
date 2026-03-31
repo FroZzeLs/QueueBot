@@ -252,6 +252,61 @@ public class QueueEngine {
         tx.commit();
     }
 
+    public static void joinQueue(Session session, Student me, Subject subject, QueueKind queueKind, Integer subgroupNum) {
+        if (subject.getDeliveryType() == DeliveryType.INDIVIDUAL) {
+            // Remove from skipped if present
+            Long count = session.createQuery(
+                            "SELECT COUNT(s) FROM SkippedStudent s WHERE s.student.id = :id AND s.subject.id = :sid AND s.queueKind = :qk AND " +
+                                    "((s.subgroupNum = :sg) OR (:sg IS NULL AND s.subgroupNum IS NULL))",
+                            Long.class)
+                    .setParameter("id", me.getId())
+                    .setParameter("sid", subject.getId())
+                    .setParameter("qk", queueKind)
+                    .setParameter("sg", subgroupNum)
+                    .uniqueResult();
+            if (count != null && count > 0) {
+                Transaction tx = session.beginTransaction();
+                session.createMutationQuery(
+                                "DELETE FROM SkippedStudent ss WHERE ss.student.id = :id AND ss.subject.id = :sid AND ss.queueKind = :qk AND " +
+                                        "((ss.subgroupNum = :sg) OR (:sg IS NULL AND ss.subgroupNum IS NULL))")
+                        .setParameter("id", me.getId())
+                        .setParameter("sid", subject.getId())
+                        .setParameter("qk", queueKind)
+                        .setParameter("sg", subgroupNum)
+                        .executeUpdate();
+                tx.commit();
+            }
+            return;
+        }
+
+        // brigade-based: rejoin the brigade containing the user
+        Brigade myBrigade = findBrigadeByStudent(session, subject, me);
+        if (myBrigade == null) throw new IllegalStateException("Вы не состоите в бригаде по этому предмету.");
+
+        // Remove from skipped if present
+        Long count = session.createQuery(
+                        "SELECT COUNT(s) FROM SkippedBrigade s WHERE s.brigade.id = :bid AND s.subject.id = :sid AND s.queueKind = :qk AND " +
+                                "((s.subgroupNum = :sg) OR (:sg IS NULL AND s.subgroupNum IS NULL))",
+                        Long.class)
+                .setParameter("bid", myBrigade.getId())
+                .setParameter("sid", subject.getId())
+                .setParameter("qk", queueKind)
+                .setParameter("sg", subgroupNum)
+                .uniqueResult();
+        if (count != null && count > 0) {
+            Transaction tx = session.beginTransaction();
+            session.createMutationQuery(
+                            "DELETE FROM SkippedBrigade sb WHERE sb.brigade.id = :bid AND sb.subject.id = :sid AND sb.queueKind = :qk AND " +
+                                    "((sb.subgroupNum = :sg) OR (:sg IS NULL AND sb.subgroupNum IS NULL))")
+                    .setParameter("bid", myBrigade.getId())
+                    .setParameter("sid", subject.getId())
+                    .setParameter("qk", queueKind)
+                    .setParameter("sg", subgroupNum)
+                    .executeUpdate();
+            tx.commit();
+        }
+    }
+
     private static Brigade findBrigadeByStudent(Session session, Subject subject, Student me) {
         return session.createQuery(
                         "FROM Brigade b WHERE b.subject.id = :sid AND EXISTS (" +
@@ -572,6 +627,18 @@ public class QueueEngine {
 
     public static List<Student> getActiveIndividualQueueForUser(Session session, Subject subject, QueueKind queueKind, Integer subgroupNum) {
         return buildActiveIndividualQueue(session, subject, queueKind, subgroupNum);
+    }
+
+    public static boolean isUserInQueue(Session session, Student me, Subject subject, QueueKind queueKind, Integer subgroupNum) {
+        if (subject.getDeliveryType() == DeliveryType.INDIVIDUAL) {
+            List<Student> active = buildActiveIndividualQueue(session, subject, queueKind, subgroupNum);
+            return active.stream().anyMatch(s -> Objects.equals(s.getId(), me.getId()));
+        } else {
+            Brigade myBrigade = findBrigadeByStudent(session, subject, me);
+            if (myBrigade == null) return false;
+            List<Brigade> active = buildActiveBrigadeQueue(session, subject, queueKind, subgroupNum);
+            return active.stream().anyMatch(b -> Objects.equals(b.getId(), myBrigade.getId()));
+        }
     }
 }
 
