@@ -33,6 +33,12 @@ public class Student {
     @Column(name = "chat_id")
     private Long chatId;
 
+    @Column(name = "telegram_auth_token")
+    private String telegramAuthToken;
+
+    @Column(name = "telegram_auth_expires")
+    private java.time.Instant telegramAuthExpires;
+
     @Column(name = "password_hash")
     private String passwordHash;
 

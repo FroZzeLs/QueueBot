@@ -38,6 +38,8 @@ export function QueuePage({ me }: { me: ApiMe; onMeChange?: (me: ApiMe) => void 
   const [queueDeliveryType, setQueueDeliveryType] = useState<'INDIVIDUAL' | 'BRIGADE'>('INDIVIDUAL');
   const [inQueue, setInQueue] = useState<boolean>(false);
   const [statusLoading, setStatusLoading] = useState(false);
+  const [isFirstInQueue, setIsFirstInQueue] = useState<boolean>(false);
+  const [myBrigadeId, setMyBrigadeId] = useState<number | null>(null);
 
   const [swapDialogOpen, setSwapDialogOpen] = useState(false);
   const [selectedTargetStudentId, setSelectedTargetStudentId] = useState<number | ''>('');
@@ -57,16 +59,22 @@ export function QueuePage({ me }: { me: ApiMe; onMeChange?: (me: ApiMe) => void 
   const selectedSubject = subjects.find((s) => s.id === selectedSubjectId) || null;
 
   async function refreshSubjects() {
-    const list = await api.getSubjects();
-    setSubjects(list);
-    if (list.length > 0 && selectedSubjectId == null) setSelectedSubjectId(list[0].id);
+    const response = await api.getSubjects();
+    setSubjects(response.subjects);
+    if (response.subjects.length > 0 && selectedSubjectId == null) {
+      setSelectedSubjectId(response.subjects[0].id);
+    }
   }
 
   async function refreshQueue() {
     if (selectedSubjectId == null) return;
     setQueueLoading(true);
     try {
-      const active = await api.getActiveQueue({ subjectId: selectedSubjectId, queueKind, subgroupNum });
+      const active = await api.getActiveQueue({
+        subjectId: selectedSubjectId,
+        queueKind,
+        ...(queueKind === 'SUBGROUP' && { subgroupNum })
+      });
       setQueueItems(active.items || []);
       setQueueDeliveryType(selectedSubject?.deliveryType === 'BRIGADE' ? 'BRIGADE' : 'INDIVIDUAL');
     } finally {
@@ -102,9 +110,48 @@ export function QueuePage({ me }: { me: ApiMe; onMeChange?: (me: ApiMe) => void 
     refreshQueue().catch(() => {});
   }, [selectedSubjectId, queueKind, subgroupNum, selectedSubject?.deliveryType]);
 
+  // Reset to COMMON queue for brigade subjects (subgroups not needed)
+  useEffect(() => {
+    if (selectedSubject?.deliveryType === 'BRIGADE' && queueKind !== 'COMMON') {
+      setQueueKind('COMMON');
+    }
+  }, [selectedSubjectId, selectedSubject?.deliveryType]);
+
   useEffect(() => {
     refreshQueueStatus().catch(() => {});
   }, [selectedSubjectId, queueKind, subgroupNum, selectedSubject?.deliveryType]);
+
+  // Fetch user's brigade for the current subject (for brigade queues)
+  useEffect(() => {
+    async function fetchMyBrigade() {
+      if (!selectedSubjectId || selectedSubject?.deliveryType !== 'BRIGADE') {
+        setMyBrigadeId(null);
+        return;
+      }
+      try {
+        const res = await api.getMyBrigade(selectedSubjectId, queueKind, queueKind === 'SUBGROUP' ? subgroupNum : undefined);
+        setMyBrigadeId(res.brigadeId);
+      } catch (e) {
+        setMyBrigadeId(null);
+      }
+    }
+    fetchMyBrigade();
+  }, [selectedSubjectId, selectedSubject?.deliveryType, queueKind, subgroupNum]);
+
+  // Check if user is first in queue (for self-mark button)
+  useEffect(() => {
+    if (!selectedSubjectId || !inQueue || queueItems.length === 0) {
+      setIsFirstInQueue(false);
+      return;
+    }
+    const firstItem = queueItems[0];
+    if (selectedSubject?.deliveryType === 'INDIVIDUAL') {
+      setIsFirstInQueue(firstItem.id === me.id);
+    } else {
+      // For brigade: check if first brigade in queue is user's brigade
+      setIsFirstInQueue(firstItem.id === myBrigadeId);
+    }
+  }, [selectedSubjectId, inQueue, queueItems, selectedSubject?.deliveryType, me.id, myBrigadeId]);
 
   useEffect(() => {
     const eventSource = api.streamQueueUpdates();
@@ -147,6 +194,12 @@ export function QueuePage({ me }: { me: ApiMe; onMeChange?: (me: ApiMe) => void 
   async function handleJoin() {
     if (!selectedSubjectId) return;
     await api.joinQueue({ subjectId: selectedSubjectId, queueKind, subgroupNum: queueKind === 'SUBGROUP' ? subgroupNum : undefined });
+    await Promise.all([refreshQueue(), refreshQueueStatus()]);
+  }
+
+  async function handleSelfMark() {
+    if (!selectedSubjectId) return;
+    await api.selfMark({ subjectId: selectedSubjectId, queueKind, subgroupNum: queueKind === 'SUBGROUP' ? subgroupNum : undefined });
     await Promise.all([refreshQueue(), refreshQueueStatus()]);
   }
 
@@ -301,18 +354,20 @@ export function QueuePage({ me }: { me: ApiMe; onMeChange?: (me: ApiMe) => void 
               </Typography>
             </Box>
             <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" gap={1}>
-              <FormControl size="small" sx={{ minWidth: 160 }}>
-                <InputLabel>Type</InputLabel>
-                <Select
-                  label="Type"
-                  value={queueKind}
-                  onChange={(e) => setQueueKind(e.target.value as any)}
-                >
-                  <MenuItem value="COMMON">Common</MenuItem>
-                  <MenuItem value="SUBGROUP">Subgroup</MenuItem>
-                </Select>
-              </FormControl>
-              {queueKind === 'SUBGROUP' ? (
+              {selectedSubject?.deliveryType === 'INDIVIDUAL' ? (
+                <FormControl size="small" sx={{ minWidth: 160 }}>
+                  <InputLabel>Type</InputLabel>
+                  <Select
+                    label="Type"
+                    value={queueKind}
+                    onChange={(e) => setQueueKind(e.target.value as any)}
+                  >
+                    <MenuItem value="COMMON">Common</MenuItem>
+                    <MenuItem value="SUBGROUP">Subgroup</MenuItem>
+                  </Select>
+                </FormControl>
+              ) : null}
+              {queueKind === 'SUBGROUP' && selectedSubject?.deliveryType === 'INDIVIDUAL' ? (
                 <FormControl size="small" sx={{ minWidth: 100 }}>
                   <InputLabel>Subgroup</InputLabel>
                   <Select
@@ -325,18 +380,34 @@ export function QueuePage({ me }: { me: ApiMe; onMeChange?: (me: ApiMe) => void 
                   </Select>
                 </FormControl>
               ) : null}
-              {inQueue ? (
-                <Button variant="outlined" onClick={handleLeave} disabled={statusLoading}>
-                  Leave
-                </Button>
-              ) : (
-                <Button variant="contained" onClick={handleJoin} disabled={statusLoading}>
-                  Join
-                </Button>
-              )}
-              <Button variant="contained" onClick={openSwapDialog} disabled={!selectedSubjectId}>
-                Swap
-              </Button>
+              {(selectedSubject?.deliveryType !== 'BRIGADE' || myBrigadeId !== null) ? (
+                <>
+                  {inQueue ? (
+                    <Button variant="outlined" onClick={handleLeave} disabled={statusLoading}>
+                      Leave
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="contained"
+                      onClick={handleJoin}
+                      disabled={
+                        statusLoading ||
+                        (selectedSubject?.deliveryType === 'INDIVIDUAL' && me.subgroup !== subgroupNum)
+                      }
+                    >
+                      Join
+                    </Button>
+                  )}
+                  <Button variant="contained" onClick={openSwapDialog} disabled={!selectedSubjectId || !inQueue}>
+                    Swap
+                  </Button>
+                  {isFirstInQueue && !isAdminLike ? (
+                    <Button variant="contained" onClick={handleSelfMark} color="success">
+                      Self Mark
+                    </Button>
+                  ) : null}
+                </>
+              ) : null}
               {isAdminLike ? (
                 <Button variant="outlined" onClick={openMarkDialog} disabled={queueItems.length === 0}>
                   Mark

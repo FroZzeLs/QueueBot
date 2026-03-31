@@ -222,7 +222,7 @@ public class QueueEngine {
         }
 
         // brigade-based: skip entire brigade containing the user
-        Brigade myBrigade = findBrigadeByStudent(session, subject, me);
+        Brigade myBrigade = findBrigadeByStudent(session, subject, me, queueKind, subgroupNum);
         if (myBrigade == null) throw new IllegalStateException("Вы не состоите в бригаде по этому предмету.");
 
         Long count = session.createQuery(
@@ -280,7 +280,7 @@ public class QueueEngine {
         }
 
         // brigade-based: rejoin the brigade containing the user
-        Brigade myBrigade = findBrigadeByStudent(session, subject, me);
+        Brigade myBrigade = findBrigadeByStudent(session, subject, me, queueKind, subgroupNum);
         if (myBrigade == null) throw new IllegalStateException("Вы не состоите в бригаде по этому предмету.");
 
         // Remove from skipped if present
@@ -307,15 +307,30 @@ public class QueueEngine {
         }
     }
 
-    private static Brigade findBrigadeByStudent(Session session, Subject subject, Student me) {
-        return session.createQuery(
-                        "FROM Brigade b WHERE b.subject.id = :sid AND EXISTS (" +
-                                "SELECT bm.id FROM BrigadeMember bm WHERE bm.brigade.id = b.id AND bm.student.id = :me)",
-                        Brigade.class)
-                .setParameter("sid", subject.getId())
-                .setParameter("me", me.getId())
-                .setMaxResults(1)
-                .uniqueResult();
+    public static Brigade findBrigadeByStudent(Session session, Subject subject, Student me, QueueKind queueKind, Integer subgroupNum) {
+        if (queueKind == QueueKind.COMMON) {
+            return session.createQuery(
+                            "FROM Brigade b WHERE b.subject.id = :sid AND EXISTS (" +
+                                    "SELECT bm.id FROM BrigadeMember bm WHERE bm.brigade.id = b.id AND bm.student.id = :me)",
+                            Brigade.class)
+                    .setParameter("sid", subject.getId())
+                    .setParameter("me", me.getId())
+                    .setMaxResults(1)
+                    .uniqueResult();
+        } else {
+            // SUBGROUP: ensure the brigade has a member from the specified subgroup
+            return session.createQuery(
+                            "FROM Brigade b WHERE b.subject.id = :sid AND EXISTS (" +
+                                    "SELECT bm.id FROM BrigadeMember bm WHERE bm.brigade.id = b.id AND bm.student.id = :me) " +
+                                    "AND EXISTS (" +
+                                    "SELECT s.id FROM Student s WHERE s.id = :me AND s.subgroup = :sg)",
+                            Brigade.class)
+                    .setParameter("sid", subject.getId())
+                    .setParameter("me", me.getId())
+                    .setParameter("sg", subgroupNum)
+                    .setMaxResults(1)
+                    .uniqueResult();
+        }
     }
 
     public static void setLastPassed(Session session, Student physicalStudent, Subject subject, QueueKind queueKind, Integer subgroupNum) {
@@ -380,7 +395,7 @@ public class QueueEngine {
                     .setParameter("sg", subgroupNum)
                     .executeUpdate();
         } else {
-            Brigade physicalBrigade = findBrigadeByStudent(session, subject, physicalStudent);
+            Brigade physicalBrigade = findBrigadeByStudent(session, subject, physicalStudent, queueKind, subgroupNum);
             if (physicalBrigade == null) throw new IllegalArgumentException("Физический студент не найден в бригаде.");
 
             if (state == null) {
@@ -533,7 +548,7 @@ public class QueueEngine {
             return req.getId();
         }
 
-        Brigade requesterBrigade = findBrigadeByStudent(session, subject, requesterStudent);
+        Brigade requesterBrigade = findBrigadeByStudent(session, subject, requesterStudent, queueKind, subgroupNum);
         if (requesterBrigade == null) throw new IllegalStateException("Вы не состоите в бригаде по этому предмету.");
 
         Brigade targetBrigade = session.get(Brigade.class, targetStudentIdOrBrigadeId);
@@ -634,7 +649,7 @@ public class QueueEngine {
             List<Student> active = buildActiveIndividualQueue(session, subject, queueKind, subgroupNum);
             return active.stream().anyMatch(s -> Objects.equals(s.getId(), me.getId()));
         } else {
-            Brigade myBrigade = findBrigadeByStudent(session, subject, me);
+            Brigade myBrigade = findBrigadeByStudent(session, subject, me, queueKind, subgroupNum);
             if (myBrigade == null) return false;
             List<Brigade> active = buildActiveBrigadeQueue(session, subject, queueKind, subgroupNum);
             return active.stream().anyMatch(b -> Objects.equals(b.getId(), myBrigade.getId()));

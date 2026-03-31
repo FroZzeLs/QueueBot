@@ -22,8 +22,8 @@ import { api } from '../api/client';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../theme/themeContext';
 
-type Step = 'LOGIN_TAG' | 'LOGIN_FIO' | 'SET_PASSWORD_TAG' | 'SET_PASSWORD_FIO' | 'PASSWORD_REQUIRED_TAG' | 'PASSWORD_REQUIRED_FIO' | 'BOOTSTRAP_KEY' | 'BOOTSTRAP_REGISTER';
-type LoginMethod = 'telegram' | 'fio';
+type Step = 'LOGIN_TAG' | 'LOGIN_FIO' | 'LOGIN_TOKEN' | 'SET_PASSWORD_TAG' | 'SET_PASSWORD_FIO' | 'PASSWORD_REQUIRED_TAG' | 'PASSWORD_REQUIRED_FIO' | 'BOOTSTRAP_KEY' | 'BOOTSTRAP_REGISTER' | 'TELEGRAM_TOKEN';
+type LoginMethod = 'telegram' | 'fio' | 'token';
 
 export function LoginPage({ onAuthed }: { onAuthed: (me: any) => void }) {
   const { toggleTheme, isDarkMode } = useTheme();
@@ -42,6 +42,7 @@ export function LoginPage({ onAuthed }: { onAuthed: (me: any) => void }) {
   const [rememberDevice, setRememberDevice] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [bootstrapMethod, setBootstrapMethod] = useState<LoginMethod>('telegram');
+  const [telegramToken, setTelegramToken] = useState('');
 
   useEffect(() => {
     let alive = true;
@@ -96,6 +97,22 @@ export function LoginPage({ onAuthed }: { onAuthed: (me: any) => void }) {
       else if (msg.includes('PASSWORD_REQUIRED')) setStep('PASSWORD_REQUIRED_FIO');
       else if (msg.includes('NOT_REGISTERED')) setError('User not found. Contact admin.');
       else if (msg.includes('UNAUTHORIZED')) setError('Login error.');
+      else setError(msg);
+    }
+  }
+
+  async function handleLoginWithToken() {
+    setError(null);
+    try {
+      await api.loginWithTelegramToken(telegramToken);
+      const me = await api.getMe();
+      onAuthed(me);
+      navigate('/');
+    } catch (e: any) {
+      const msg = String(e?.message || e);
+      if (msg.includes('TOKEN_EXPIRED')) setError('Token expired. Please request a new one.');
+      else if (msg.includes('INVALID_TOKEN')) setError('Invalid token.');
+      else if (msg.includes('STUDENT_NOT_FOUND')) setError('Student not found.');
       else setError(msg);
     }
   }
@@ -347,8 +364,33 @@ export function LoginPage({ onAuthed }: { onAuthed: (me: any) => void }) {
           QueueBot
         </Typography>
 
-        <Tabs value={loginMethod} onChange={(_, v) => setLoginMethod(v)} sx={{ mb: 2 }}>
+        <Tabs value={loginMethod} onChange={(_, v) => {
+          setLoginMethod(v);
+          // Reset step and fields when switching methods
+          if (v === 'token') {
+            setStep('LOGIN_TOKEN');
+            setTelegramToken('');
+            setTelegramTag('');
+            setFio('');
+            setPassword('');
+            setConfirmPassword('');
+          } else if (v === 'telegram') {
+            setStep('LOGIN_TAG');
+            setTelegramTag('');
+            setTelegramToken('');
+            setPassword('');
+            setConfirmPassword('');
+          } else if (v === 'fio') {
+            setStep('LOGIN_FIO');
+            setFio('');
+            setTelegramTag('');
+            setTelegramToken('');
+            setPassword('');
+            setConfirmPassword('');
+          }
+        }} sx={{ mb: 2 }}>
           <Tab value="telegram" label="Telegram" />
+          <Tab value="token" label="Token" />
           <Tab value="fio" label="Name" />
         </Tabs>
 
@@ -363,6 +405,25 @@ export function LoginPage({ onAuthed }: { onAuthed: (me: any) => void }) {
                 fullWidth
                 placeholder="username"
               />
+              {step === 'LOGIN_TAG' && (
+                <Button variant="contained" onClick={handleLoginTagOnly} disabled={!telegramTag.trim()}>
+                  Sign In
+                </Button>
+              )}
+            </>
+          ) : loginMethod === 'token' ? (
+            <>
+              <TextField
+                label="Telegram Token"
+                value={telegramToken}
+                onChange={(e) => setTelegramToken(e.target.value)}
+                fullWidth
+                placeholder="Enter token from bot (/auth)"
+                helperText="Get token by sending /auth to the bot"
+              />
+              <Button variant="contained" onClick={handleLoginWithToken} disabled={!telegramToken.trim()}>
+                Sign In with Token
+              </Button>
             </>
           ) : (
             <>
@@ -386,55 +447,35 @@ export function LoginPage({ onAuthed }: { onAuthed: (me: any) => void }) {
                   <MenuItem value={2}>2</MenuItem>
                 </Select>
               </FormControl>
+              {step === 'LOGIN_FIO' && (
+                <Button variant="contained" onClick={handleLoginFioOnly} disabled={!fio.trim()}>
+                  Sign In
+                </Button>
+              )}
             </>
           )}
 
-          {/* Password fields and related buttons appear before the checkbox */}
-          {step === 'SET_PASSWORD_TAG' && loginMethod === 'telegram' ? (
+          {/* Password fields - show only when needed */}
+          {(step === 'SET_PASSWORD_TAG' && loginMethod === 'telegram') || (step === 'SET_PASSWORD_FIO' && loginMethod === 'fio') ? (
             <>
               <TextField label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} fullWidth />
               <TextField
-                label="Confirm"
+                label="Confirm Password"
                 type="password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 fullWidth
               />
-              <Button variant="contained" onClick={handleSetPasswordTag}>
-                Save
+              <Button variant="contained" onClick={step === 'SET_PASSWORD_TAG' ? handleSetPasswordTag : handleSetPasswordFio}>
+                Save Password
               </Button>
             </>
           ) : null}
 
-          {step === 'SET_PASSWORD_FIO' && loginMethod === 'fio' ? (
+          {(step === 'PASSWORD_REQUIRED_TAG' && loginMethod === 'telegram') || (step === 'PASSWORD_REQUIRED_FIO' && loginMethod === 'fio') ? (
             <>
               <TextField label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} fullWidth />
-              <TextField
-                label="Confirm"
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                fullWidth
-              />
-              <Button variant="contained" onClick={handleSetPasswordFio}>
-                Save
-              </Button>
-            </>
-          ) : null}
-
-          {step === 'PASSWORD_REQUIRED_TAG' && loginMethod === 'telegram' ? (
-            <>
-              <TextField label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} fullWidth />
-              <Button variant="contained" onClick={handlePasswordRequiredLoginTag}>
-                Sign In
-              </Button>
-            </>
-          ) : null}
-
-          {step === 'PASSWORD_REQUIRED_FIO' && loginMethod === 'fio' ? (
-            <>
-              <TextField label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} fullWidth />
-              <Button variant="contained" onClick={handlePasswordRequiredLoginFio}>
+              <Button variant="contained" onClick={step === 'PASSWORD_REQUIRED_TAG' ? handlePasswordRequiredLoginTag : handlePasswordRequiredLoginFio}>
                 Sign In
               </Button>
             </>
@@ -444,18 +485,6 @@ export function LoginPage({ onAuthed }: { onAuthed: (me: any) => void }) {
             control={<Checkbox checked={rememberDevice} onChange={(e) => setRememberDevice(e.target.checked)} />}
             label="Remember device"
           />
-
-          {step === 'LOGIN_TAG' && loginMethod === 'telegram' ? (
-            <Button variant="contained" onClick={handleLoginTagOnly}>
-              Sign In
-            </Button>
-          ) : null}
-
-          {step === 'LOGIN_FIO' && loginMethod === 'fio' ? (
-            <Button variant="contained" onClick={handleLoginFioOnly}>
-              Sign In
-            </Button>
-          ) : null}
 
           {error && (
             <Typography color="error" variant="body2">

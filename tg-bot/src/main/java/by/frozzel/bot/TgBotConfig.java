@@ -22,6 +22,9 @@ public class TgBotConfig {
         if (botToken != null && !botToken.isBlank() && botName != null && !botName.isBlank()) {
             TelegramBotsApi botsApi = new TelegramBotsApi(DefaultBotSession.class);
             botsApi.registerBot(bot);
+            
+            // Start monitoring thread after bot is registered
+            bot.startMonitoring();
         } else {
             System.out.println("TG bot token/botName not set; Telegram polling disabled.");
         }

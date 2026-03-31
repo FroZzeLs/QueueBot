@@ -76,6 +76,16 @@ export const api = {
         rememberDevice: payload.rememberDevice,
       }),
     } as any),
+  loginWithTelegramToken: (token: string) =>
+    apiFetch<any>('/api/tg-auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ authToken: token }),
+    } as any),
+  requestTelegramAuthToken: (chatId: number) =>
+    apiFetch<{ token: string; expiresAt: string }>('/api/tg-auth/request-token', {
+      method: 'POST',
+      body: JSON.stringify({ chatId }),
+    } as any),
   setPassword: (payload: { telegramTag?: string; fio?: string; subgroup?: number; newPassword: string; rememberDevice: boolean }) =>
     apiFetch<any>('/api/auth/set-password', {
       method: 'POST',
@@ -88,7 +98,7 @@ export const api = {
       }),
     } as any),
 
-  getSubjects: () => apiFetch<Array<{ id: number; name: string; deliveryType: string }>>('/api/subjects'),
+  getSubjects: () => apiFetch<{ subjects: Array<{ id: number; name: string; deliveryType: string }> }>('/api/subjects'),
   getActiveQueue: (params: { subjectId: number; queueKind: 'COMMON' | 'SUBGROUP'; subgroupNum?: number }) =>
     apiFetch<any>(
       `/api/queue/active?subjectId=${params.subjectId}&queueKind=${params.queueKind}${
@@ -119,6 +129,17 @@ export const api = {
 
   getQueueStatus: (payload: { subjectId: number; queueKind: string; subgroupNum?: number }) =>
     apiFetch<any>('/api/queue/status', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    } as any),
+
+  getMyBrigade: (subjectId: number, queueKind: string, subgroupNum?: number) =>
+    apiFetch<{ brigadeId: number | null }>(
+      `/api/queue/my-brigade?subjectId=${subjectId}&queueKind=${queueKind}${subgroupNum != null ? `&subgroupNum=${subgroupNum}` : ''}`
+    ),
+
+  selfMark: (payload: { subjectId: number; queueKind: string; subgroupNum?: number }) =>
+    apiFetch<any>('/api/queue/self-mark', {
       method: 'POST',
       body: JSON.stringify(payload),
     } as any),

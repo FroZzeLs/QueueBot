@@ -26,7 +26,7 @@ public class QueueController {
     private final List<SseEmitter> emitters = new CopyOnWriteArrayList<>();
 
     @GetMapping("/subjects")
-    public List<Map<String, Object>> getSubjects() {
+    public Map<String, List<Map<String, Object>>> getSubjects() {
         try (Session s = HibernateUtil.getSessionFactory().openSession()) {
             List<Subject> subjects = s.createQuery("FROM Subject ORDER BY name ASC", Subject.class).list();
             List<Map<String, Object>> res = new ArrayList<>();
@@ -37,7 +37,7 @@ public class QueueController {
                         "deliveryType", subj.getDeliveryType().name()
                 ));
             }
-            return res;
+            return Map.of("subjects", res);
         }
     }
 
@@ -211,6 +211,69 @@ public class QueueController {
         }
     }
 
+    public static class SelfMarkRequest {
+        public long subjectId;
+        public String queueKind;
+        public Integer subgroupNum;
+    }
+
+    @PostMapping("/queue/self-mark")
+    public ResponseEntity<?> selfMark(@RequestBody @Valid SelfMarkRequest req) {
+        Student me = AuthContext.getCurrentStudent();
+        if (me == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "UNAUTHORIZED"));
+
+        QueueKind qk;
+        try {
+            qk = QueueKind.valueOf(req.queueKind.toUpperCase(Locale.ROOT));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "BAD_QUEUE_KIND"));
+        }
+
+        try (Session s = HibernateUtil.getSessionFactory().openSession()) {
+            Subject subject = s.get(Subject.class, req.subjectId);
+            if (subject == null) return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "SUBJECT_NOT_FOUND"));
+
+            if (subject.getDeliveryType() == DeliveryType.INDIVIDUAL) {
+                List<Student> active = QueueEngine.buildActiveIndividualQueue(s, subject, qk, req.subgroupNum);
+                if (active.isEmpty()) {
+                    return ResponseEntity.badRequest().body(Map.of("error", "QUEUE_IS_EMPTY"));
+                }
+                Student first = active.get(0);
+                if (!Objects.equals(first.getId(), me.getId())) {
+                    return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "NOT_FIRST_IN_QUEUE"));
+                }
+                QueueEngine.setLastPassed(s, me, subject, qk, req.subgroupNum);
+            } else {
+                Brigade myBrigade = QueueEngine.findBrigadeByStudent(s, subject, me, qk, req.subgroupNum);
+                if (myBrigade == null) {
+                    return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "NOT_IN_BRIGADE_QUEUE"));
+                }
+                List<Brigade> active = QueueEngine.buildActiveBrigadeQueue(s, subject, qk, req.subgroupNum);
+                if (active.isEmpty()) {
+                    return ResponseEntity.badRequest().body(Map.of("error", "QUEUE_IS_EMPTY"));
+                }
+                Brigade first = active.get(0);
+                if (!Objects.equals(first.getId(), myBrigade.getId())) {
+                    return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "NOT_FIRST_IN_QUEUE"));
+                }
+                // Find any member of the brigade to use as physical student
+                Student anyMember = s.createQuery(
+                                "SELECT bm.student FROM BrigadeMember bm WHERE bm.brigade.id = :bid ORDER BY bm.student.fio", Student.class)
+                        .setParameter("bid", myBrigade.getId())
+                        .setMaxResults(1)
+                        .uniqueResult();
+                if (anyMember == null) {
+                    return ResponseEntity.badRequest().body(Map.of("error", "BRIGADE_HAS_NO_MEMBERS"));
+                }
+                QueueEngine.setLastPassed(s, anyMember, subject, qk, req.subgroupNum);
+            }
+            notifyQueueUpdate(subject.getId(), qk.name(), req.subgroupNum);
+            return ResponseEntity.ok(Map.of("state", "SELF_MARKED"));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
     public static class CreateSwapRequestBody {
         public long subjectId;
         public String queueKind;
@@ -296,6 +359,31 @@ public class QueueController {
             return ResponseEntity.ok(Map.of("requestId", requestId, "deliveryType", "BRIGADE"));
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @GetMapping("/queue/my-brigade")
+    public ResponseEntity<?> getMyBrigade(@RequestParam long subjectId, @RequestParam String queueKind, @RequestParam(required = false) Integer subgroupNum) {
+        Student me = AuthContext.getCurrentStudent();
+        if (me == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "UNAUTHORIZED"));
+        
+        QueueKind qk;
+        try {
+            qk = QueueKind.valueOf(queueKind.toUpperCase(Locale.ROOT));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "BAD_QUEUE_KIND"));
+        }
+        
+        try (Session s = HibernateUtil.getSessionFactory().openSession()) {
+            Subject subject = s.get(Subject.class, subjectId);
+            if (subject == null) return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "SUBJECT_NOT_FOUND"));
+            
+            if (subject.getDeliveryType() != DeliveryType.BRIGADE) {
+                return ResponseEntity.ok(Map.of("brigadeId", null));
+            }
+            
+            Brigade myBrigade = QueueEngine.findBrigadeByStudent(s, subject, me, qk, subgroupNum);
+            return ResponseEntity.ok(Map.of("brigadeId", myBrigade != null ? myBrigade.getId() : null));
         }
     }
 
