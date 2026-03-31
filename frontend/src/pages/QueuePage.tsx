@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Box,
   Button,
@@ -16,14 +16,18 @@ import {
   Stack,
   TextField,
   Typography,
+  IconButton,
 } from '@mui/material';
+import { Brightness4, Brightness7 } from '@mui/icons-material';
 import { api, type ApiMe } from '../api/client';
+import { useTheme } from '../theme/themeContext';
 
 type QueueItem =
   | { position: number; id: number; fio: string; subgroup: number }
   | { position: number; id: number; displayName: string };
 
 export function QueuePage({ me }: { me: ApiMe; onMeChange?: (me: ApiMe) => void }) {
+  const { toggleTheme, isDarkMode } = useTheme();
   const [subjects, setSubjects] = useState<Array<{ id: number; name: string; deliveryType: string }>>([]);
   const [loading, setLoading] = useState(true);
   const [selectedSubjectId, setSelectedSubjectId] = useState<number | null>(null);
@@ -46,7 +50,7 @@ export function QueuePage({ me }: { me: ApiMe; onMeChange?: (me: ApiMe) => void 
   const [markOptions, setMarkOptions] = useState<Array<{ id: number; fio: string }>>([]);
 
   const isAdminLike = me.role === 'ADMIN' || me.role === 'SUPER_ADMIN';
-  const selectedSubject = useMemo(() => subjects.find((s) => s.id === selectedSubjectId) || null, [subjects, selectedSubjectId]);
+  const selectedSubject = subjects.find((s) => s.id === selectedSubjectId) || null;
 
   async function refreshSubjects() {
     const list = await api.getSubjects();
@@ -70,10 +74,6 @@ export function QueuePage({ me }: { me: ApiMe; onMeChange?: (me: ApiMe) => void 
     let alive = true;
     setLoading(true);
     refreshSubjects()
-      .then(() => {
-        if (!alive) return;
-      })
-      .catch(() => {})
       .finally(() => {
         if (!alive) return;
         setLoading(false);
@@ -81,12 +81,10 @@ export function QueuePage({ me }: { me: ApiMe; onMeChange?: (me: ApiMe) => void 
     return () => {
       alive = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     refreshQueue().catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSubjectId, queueKind, subgroupNum, selectedSubject?.deliveryType]);
 
   async function handleLeave() {
@@ -153,7 +151,6 @@ export function QueuePage({ me }: { me: ApiMe; onMeChange?: (me: ApiMe) => void 
       return;
     }
 
-    // BRIGADE: build from all active brigades members
     const brigadeIds = (queueItems as any[]).map((it) => it.id as number);
     setMarkOptionsLoading(true);
     try {
@@ -190,28 +187,31 @@ export function QueuePage({ me }: { me: ApiMe; onMeChange?: (me: ApiMe) => void 
   }
 
   return (
-    <Box padding={3} sx={{ background: '#f5faff', minHeight: '100vh' }}>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2} sx={{ mb: 2 }}>
-        <Typography variant="h6" fontWeight={800} color="primary.main">
-          Очереди
+    <Box sx={{ p: 3, minHeight: '100vh', bgcolor: 'background.default' }}>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2} sx={{ mb: 3 }}>
+        <Typography variant="h4" fontWeight={700} color="primary.main">
+          Queue
         </Typography>
-        <Stack direction="row" spacing={1} alignItems="center">
-          <Chip label={me.role === 'SUPER_ADMIN' ? 'Суперадмин' : me.role === 'ADMIN' ? 'Админ' : 'Пользователь'} color="primary" />
+        <Stack direction="row" spacing={1.5} alignItems="center">
+          <Chip label={me.role === 'SUPER_ADMIN' ? 'Super' : me.role === 'ADMIN' ? 'Admin' : 'User'} color="primary" size="small" />
+          <IconButton onClick={toggleTheme} color="inherit" size="small">
+            {isDarkMode ? <Brightness7 /> : <Brightness4 />}
+          </IconButton>
           <Button variant="outlined" onClick={() => (window.location.href = '/login')} size="small">
-            Сменить аккаунт
+            Switch
           </Button>
           {isAdminLike ? (
             <Button variant="contained" onClick={() => (window.location.href = '/admin')} size="small">
-              Админка
+              Admin
             </Button>
           ) : null}
         </Stack>
       </Stack>
 
       <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
-        <Card sx={{ width: { md: 320 }, padding: 2, borderRadius: 3 }}>
-          <Typography fontWeight={700} sx={{ mb: 1 }}>
-            Предметы
+        <Card sx={{ width: { md: 320 }, p: 2.5, borderRadius: 3 }}>
+          <Typography fontWeight={700} sx={{ mb: 1.5 }} variant="h6">
+            Subjects
           </Typography>
           <Stack spacing={1}>
             {subjects.map((s) => (
@@ -221,40 +221,40 @@ export function QueuePage({ me }: { me: ApiMe; onMeChange?: (me: ApiMe) => void 
                 onClick={() => setSelectedSubjectId(s.id)}
                 sx={{ justifyContent: 'flex-start' }}
               >
-                {s.name} · {s.deliveryType === 'BRIGADE' ? 'Бригадный' : 'Индивидуальный'}
+                {s.name} · {s.deliveryType === 'BRIGADE' ? 'Brigade' : 'Individual'}
               </Button>
             ))}
-            {subjects.length === 0 ? <Typography color="text.secondary">Пока нет предметов.</Typography> : null}
+            {subjects.length === 0 ? <Typography color="text.secondary">No subjects.</Typography> : null}
           </Stack>
         </Card>
 
-        <Card sx={{ flex: 1, padding: 2, borderRadius: 3 }}>
+        <Card sx={{ flex: 1, p: 2.5, borderRadius: 3 }}>
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} justifyContent="space-between" alignItems={{ md: 'center' }}>
             <Box>
-              <Typography fontWeight={700} sx={{ mb: 0.5 }}>
-                {selectedSubject ? `Пара: ${selectedSubject.name}` : 'Выберите предмет'}
+              <Typography fontWeight={700} sx={{ mb: 0.5 }} variant="h6">
+                {selectedSubject ? `${selectedSubject.name}` : 'Select subject'}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                {queueDeliveryType === 'BRIGADE' ? 'Очередь крутится по бригадам' : 'Очередь крутится по студентам'}
+                {queueDeliveryType === 'BRIGADE' ? 'Queue by brigades' : 'Queue by students'}
               </Typography>
             </Box>
-            <Stack direction="row" spacing={1} alignItems="center">
-              <FormControl size="small" sx={{ minWidth: 200 }}>
-                <InputLabel>Тип очереди</InputLabel>
+            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" gap={1}>
+              <FormControl size="small" sx={{ minWidth: 160 }}>
+                <InputLabel>Type</InputLabel>
                 <Select
-                  label="Тип очереди"
+                  label="Type"
                   value={queueKind}
                   onChange={(e) => setQueueKind(e.target.value as any)}
                 >
-                  <MenuItem value="COMMON">Общая</MenuItem>
-                  <MenuItem value="SUBGROUP">Подгрупповая</MenuItem>
+                  <MenuItem value="COMMON">Common</MenuItem>
+                  <MenuItem value="SUBGROUP">Subgroup</MenuItem>
                 </Select>
               </FormControl>
               {queueKind === 'SUBGROUP' ? (
-                <FormControl size="small" sx={{ minWidth: 120 }}>
-                  <InputLabel>Подгруппа</InputLabel>
+                <FormControl size="small" sx={{ minWidth: 100 }}>
+                  <InputLabel>Subgroup</InputLabel>
                   <Select
-                    label="Подгруппа"
+                    label="Subgroup"
                     value={subgroupNum}
                     onChange={(e) => setSubgroupNum(Number(e.target.value))}
                   >
@@ -264,37 +264,37 @@ export function QueuePage({ me }: { me: ApiMe; onMeChange?: (me: ApiMe) => void 
                 </FormControl>
               ) : null}
               <Button variant="outlined" onClick={handleLeave}>
-                Сняться
+                Leave
               </Button>
               <Button variant="contained" onClick={openSwapDialog} disabled={!selectedSubjectId}>
-                Запрос на смену
+                Swap
               </Button>
               {isAdminLike ? (
                 <Button variant="outlined" onClick={openMarkDialog} disabled={queueItems.length === 0}>
-                  Отметить последнего
+                  Mark
                 </Button>
               ) : null}
             </Stack>
           </Stack>
 
-          <Box sx={{ mt: 2 }}>
+          <Box sx={{ mt: 2.5 }}>
             {queueLoading ? (
-              <Box display="flex" justifyContent="center" padding={2}>
+              <Box display="flex" justifyContent="center" p={2}>
                 <CircularProgress />
               </Box>
             ) : (
               <Stack spacing={1}>
                 {queueItems.length === 0 ? (
-                  <Typography color="text.secondary">Очередь пуста.</Typography>
+                  <Typography color="text.secondary">Queue is empty.</Typography>
                 ) : (
                   queueItems.map((it) => (
-                    <Box key={it.id} sx={{ display: 'flex', justifyContent: 'space-between', paddingY: 0.5 }}>
+                    <Box key={it.id} sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}>
                       <Typography>
                         <b>{it.position}.</b>{' '}
                         {selectedSubject?.deliveryType === 'BRIGADE' ? it.displayName : it.fio}
                       </Typography>
-                      <Typography color="text.secondary" variant="body2">
-                        {selectedSubject?.deliveryType === 'INDIVIDUAL' ? `подгруппа ${it.subgroup}` : 'бригада'}
+                      <Typography variant="body2" color="text.secondary">
+                        {selectedSubject?.deliveryType === 'INDIVIDUAL' ? `subgroup ${it.subgroup}` : 'brigade'}
                       </Typography>
                     </Box>
                   ))
@@ -306,20 +306,20 @@ export function QueuePage({ me }: { me: ApiMe; onMeChange?: (me: ApiMe) => void 
       </Stack>
 
       <Dialog open={swapDialogOpen} onClose={() => setSwapDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Запрос на обмен</DialogTitle>
+        <DialogTitle>Swap Request</DialogTitle>
         <DialogContent>
           {!selectedSubject ? null : selectedSubject.deliveryType === 'INDIVIDUAL' ? (
             <Stack spacing={2} sx={{ mt: 1 }}>
               <FormControl fullWidth>
-                <InputLabel>Кого выбрать</InputLabel>
+                <InputLabel>Select student</InputLabel>
                 <Select
-                  label="Кого выбрать"
+                  label="Select student"
                   value={selectedTargetStudentId}
                   onChange={(e) => setSelectedTargetStudentId(e.target.value as any)}
                 >
                   {queueItems.map((it) => (
                     <MenuItem key={it.id} value={it.id}>
-                      {it.fio} (подгруппа {it.subgroup})
+                      {it.fio} (subgroup {it.subgroup})
                     </MenuItem>
                   ))}
                 </Select>
@@ -328,9 +328,9 @@ export function QueuePage({ me }: { me: ApiMe; onMeChange?: (me: ApiMe) => void 
           ) : (
             <Stack spacing={2} sx={{ mt: 1 }}>
               <FormControl fullWidth>
-                <InputLabel>Бригада</InputLabel>
+                <InputLabel>Brigade</InputLabel>
                 <Select
-                  label="Бригада"
+                  label="Brigade"
                   value={selectedTargetBrigadeId}
                   onChange={(e) => handleChooseTargetBrigade(Number(e.target.value))}
                 >
@@ -347,9 +347,9 @@ export function QueuePage({ me }: { me: ApiMe; onMeChange?: (me: ApiMe) => void 
                 </Box>
               ) : (
                 <FormControl fullWidth disabled={targetMembers.length === 0}>
-                  <InputLabel>Кому отправить запрос</InputLabel>
+                  <InputLabel>Notify member</InputLabel>
                   <Select
-                    label="Кому отправить запрос"
+                    label="Notify member"
                     value={selectedNotifyStudentId}
                     onChange={(e) => setSelectedNotifyStudentId(Number(e.target.value))}
                   >
@@ -366,26 +366,26 @@ export function QueuePage({ me }: { me: ApiMe; onMeChange?: (me: ApiMe) => void 
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setSwapDialogOpen(false)} variant="outlined">
-            Отмена
+            Cancel
           </Button>
           <Button onClick={handleCreateSwap} variant="contained">
-            Отправить
+            Send
           </Button>
         </DialogActions>
       </Dialog>
 
       <Dialog open={markDialogOpen} onClose={() => setMarkDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Отметить последнего сдавшего</DialogTitle>
+        <DialogTitle>Mark Last Passed</DialogTitle>
         <DialogContent>
           {markOptionsLoading ? (
-            <Box display="flex" justifyContent="center" padding={2}>
+            <Box display="flex" justifyContent="center" p={2}>
               <CircularProgress />
             </Box>
           ) : (
             <FormControl fullWidth>
-              <InputLabel>Студент</InputLabel>
+              <InputLabel>Student</InputLabel>
               <Select
-                label="Студент"
+                label="Student"
                 value={markPhysicalStudentId}
                 onChange={(e) => setMarkPhysicalStudentId(Number(e.target.value))}
               >
@@ -400,14 +400,13 @@ export function QueuePage({ me }: { me: ApiMe; onMeChange?: (me: ApiMe) => void 
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setMarkDialogOpen(false)} variant="outlined">
-            Отмена
+            Cancel
           </Button>
           <Button onClick={handleMarkLastPassed} variant="contained" disabled={markPhysicalStudentId === ''}>
-            Сохранить
+            Save
           </Button>
         </DialogActions>
       </Dialog>
     </Box>
   );
 }
-

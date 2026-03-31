@@ -34,6 +34,42 @@ public class BrigadeController {
         }
     }
 
+    @GetMapping("/brigades/subject")
+    public ResponseEntity<?> listBrigadesWithMembers(@RequestParam long subjectId) {
+        try (Session s = HibernateUtil.getSessionFactory().openSession()) {
+            List<Brigade> brigades = s.createQuery(
+                            "FROM Brigade b WHERE b.subject.id = :sid ORDER BY b.sortKey ASC",
+                            Brigade.class)
+                    .setParameter("sid", subjectId)
+                    .list();
+            
+            List<Map<String, Object>> res = new ArrayList<>();
+            for (Brigade b : brigades) {
+                List<BrigadeMember> ms = s.createQuery(
+                                "FROM BrigadeMember bm WHERE bm.brigade.id = :bid ORDER BY bm.student.fio ASC",
+                                BrigadeMember.class)
+                        .setParameter("bid", b.getId())
+                        .list();
+                
+                List<Long> memberIds = new ArrayList<>();
+                List<String> memberNames = new ArrayList<>();
+                for (BrigadeMember bm : ms) {
+                    Student st = bm.getStudent();
+                    memberIds.add(st.getId());
+                    memberNames.add(st.getFio());
+                }
+                
+                res.add(Map.of(
+                        "id", b.getId(),
+                        "displayName", b.getDisplayName(),
+                        "memberIds", memberIds,
+                        "memberNames", memberNames
+                ));
+            }
+            return ResponseEntity.ok(Map.of("brigades", res));
+        }
+    }
+
     @GetMapping("/brigades/{brigadeId}/members")
     public ResponseEntity<?> members(@PathVariable long brigadeId) {
         try (Session s = HibernateUtil.getSessionFactory().openSession()) {
@@ -55,4 +91,3 @@ public class BrigadeController {
         }
     }
 }
-

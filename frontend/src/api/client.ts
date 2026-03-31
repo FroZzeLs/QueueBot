@@ -89,6 +89,10 @@ export const api = {
       }`,
     ),
   getBrigadeMembers: (brigadeId: number) => apiFetch<any>(`/api/brigades/${brigadeId}/members`),
+  getBrigadesForSubject: (subjectId: number) =>
+    apiFetch<{ brigades: Array<{ id: number; displayName: string; memberIds: number[]; memberNames: string[] }> }>(
+      `/api/brigades/subject?subjectId=${subjectId}`
+    ),
 
   leaveQueue: (payload: { subjectId: number; queueKind: string; subgroupNum?: number }) =>
     apiFetch<any>('/api/queue/leave', {

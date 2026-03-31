@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Box,
   Button,
@@ -15,15 +15,16 @@ import {
   MenuItem,
   Select,
   Stack,
-  Tab,
-  Tabs,
   TextField,
   Typography,
   IconButton,
+  Tabs,
+  Tab,
 } from '@mui/material';
-import EditIcon from '@mui/icons-material/Edit';
-import DeleteIcon from '@mui/icons-material/Delete';
+import { Brightness4, Brightness7, ArrowBack, Edit, Delete } from '@mui/icons-material';
 import { api, type ApiMe } from '../api/client';
+import { useTheme } from '../theme/themeContext';
+import { useNavigate } from 'react-router-dom';
 
 type StudentRow = {
   id: number;
@@ -36,7 +37,6 @@ type StudentRow = {
 
 type SubjectRow = { id: number; name: string; deliveryType: string };
 
-// Edit student modal state
 type EditStudentState = {
   open: boolean;
   studentId: number | null;
@@ -46,22 +46,21 @@ type EditStudentState = {
 };
 
 export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiMe | null) => void }) {
+  const { toggleTheme, isDarkMode } = useTheme();
+  const navigate = useNavigate();
   const [tab, setTab] = useState(0);
   const [loading, setLoading] = useState(true);
   const [students, setStudents] = useState<StudentRow[]>([]);
   const [subjects, setSubjects] = useState<SubjectRow[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  // add student
   const [newFio, setNewFio] = useState('');
   const [newTag, setNewTag] = useState('');
   const [newSubgroup, setNewSubgroup] = useState<1 | 2>(1);
 
-  // add subject
   const [newSubjectName, setNewSubjectName] = useState('');
   const [newSubjectDeliveryType, setNewSubjectDeliveryType] = useState<'INDIVIDUAL' | 'BRIGADE'>('INDIVIDUAL');
 
-  // edit student dialog
   const [editDialog, setEditDialog] = useState<EditStudentState>({
     open: false,
     studentId: null,
@@ -73,14 +72,36 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteStudentId, setDeleteStudentId] = useState<number | null>(null);
 
-  const brigadeSubjects = useMemo(() => subjects.filter((s) => s.deliveryType === 'BRIGADE'), [subjects]);
+  const brigadeSubjects = subjects.filter((s) => s.deliveryType === 'BRIGADE');
   const [selectedBrigadeSubjectId, setSelectedBrigadeSubjectId] = useState<number | null>(brigadeSubjects[0]?.id ?? null);
 
-  // brigades builder (re-create)
   const [builderSelected, setBuilderSelected] = useState<Set<number>>(new Set());
   const [groups, setGroups] = useState<number[][]>([]);
+  const [brigadesLoading, setBrigadesLoading] = useState(false);
 
-  const selectedBrigadeSubject = useMemo(() => subjects.find((s) => s.id === selectedBrigadeSubjectId) || null, [subjects, selectedBrigadeSubjectId]);
+  const selectedBrigadeSubject = subjects.find((s) => s.id === selectedBrigadeSubjectId) || null;
+
+  // Load brigades for selected subject
+  useEffect(() => {
+    if (!selectedBrigadeSubjectId) {
+      setGroups([]);
+      return;
+    }
+    setBrigadesLoading(true);
+    api.getBrigadesForSubject(selectedBrigadeSubjectId)
+      .then(res => {
+        // Convert brigades to groups of student IDs
+        const loadedGroups = res.brigades.map((b: any) => b.memberIds);
+        setGroups(loadedGroups);
+        setBuilderSelected(new Set());
+      })
+      .catch(() => {
+        setGroups([]);
+      })
+      .finally(() => {
+        setBrigadesLoading(false);
+      });
+  }, [selectedBrigadeSubjectId]);
 
   useEffect(() => {
     let alive = true;
@@ -94,15 +115,13 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
     return () => {
       alive = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     if (brigadeSubjects.length > 0 && selectedBrigadeSubjectId == null) {
       setSelectedBrigadeSubjectId(brigadeSubjects[0].id);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [brigadeSubjects]);
+  }, [brigadeSubjects, selectedBrigadeSubjectId]);
 
   async function fetchStudents() {
     const res = await fetch('/api/admin/students', { credentials: 'include' });
@@ -148,13 +167,13 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
   async function handleSaveEdit() {
     setError(null);
     if (!editDialog.studentId) return;
-    
+
     const payload = {
       fio: editDialog.fio,
       telegramTag: editDialog.telegramTag,
       subgroup: editDialog.subgroup,
     };
-    
+
     const res = await fetch(`/api/admin/students/${editDialog.studentId}`, {
       method: 'PUT',
       credentials: 'include',
@@ -163,7 +182,7 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(String(data?.error || data?.message || 'Failed'));
-    
+
     setEditDialog({ ...editDialog, open: false });
     await fetchStudents();
   }
@@ -171,14 +190,14 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
   async function handleDeleteStudent() {
     setError(null);
     if (!deleteStudentId) return;
-    
+
     const res = await fetch(`/api/admin/students/${deleteStudentId}`, {
       method: 'DELETE',
       credentials: 'include',
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(String(data?.error || data?.message || 'Failed'));
-    
+
     setDeleteDialogOpen(false);
     setDeleteStudentId(null);
     await fetchStudents();
@@ -219,19 +238,6 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
     onMeChange(me2);
   }
 
-  async function handleUpdateSubgroup(studentId: number, subgroup: 1 | 2) {
-    setError(null);
-    const res = await fetch(`/api/admin/students/${studentId}/subgroup`, {
-      method: 'PATCH',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ subgroup }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(String(data?.error || data?.message || 'Failed'));
-    await fetchStudents();
-  }
-
   function toggleBuilderStudent(id: number) {
     setBuilderSelected((prev) => {
       const next = new Set(prev);
@@ -241,12 +247,11 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
     });
   }
 
-  const assignedStudentIds = useMemo(() => new Set(groups.flatMap((g) => g)), [groups]);
+  const assignedStudentIds = new Set(groups.flatMap((g) => g));
 
   function addGroupFromSelected() {
     if (builderSelected.size === 0) return;
     const ids = Array.from(builderSelected).sort((a, b) => a - b);
-    // avoid duplicates across groups
     for (const id of ids) {
       if (assignedStudentIds.has(id)) return;
     }
@@ -266,7 +271,7 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
     const used = new Set(groups.flatMap((g) => g));
 
     if (used.size !== allIds.size) {
-      setError('Каждый студент должен входить ровно в одну бригаду.');
+      setError('Each student must be in exactly one brigade.');
       return;
     }
 
@@ -296,78 +301,102 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
   }
 
   return (
-    <Box padding={3} bgcolor="#f5faff" minHeight="100vh">
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
-        <Typography variant="h6" fontWeight={800} color="primary.main">
-          Админка
-        </Typography>
-        <Stack direction="row" spacing={1}>
-          <Chip label={me.role === 'SUPER_ADMIN' ? 'Суперадмин' : 'Админ'} color="primary" />
+    <Box sx={{ p: 3, minHeight: '100vh', bgcolor: 'background.default' }}>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 3 }}>
+        <Stack direction="row" spacing={1.5} alignItems="center">
+          <IconButton onClick={() => navigate('/')} size="small">
+            <ArrowBack />
+          </IconButton>
+          <Typography variant="h4" fontWeight={700} color="primary.main">
+            Admin
+          </Typography>
+        </Stack>
+        <Stack direction="row" spacing={1.5} alignItems="center">
+          <Chip label={me.role === 'SUPER_ADMIN' ? 'Super' : 'Admin'} color="primary" size="small" />
+          <IconButton onClick={toggleTheme} color="inherit" size="small">
+            {isDarkMode ? <Brightness7 /> : <Brightness4 />}
+          </IconButton>
         </Stack>
       </Stack>
 
       <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 2 }}>
-        <Tab label="Студенты" />
-        <Tab label="Предметы" />
-        <Tab label="Бригады" disabled={brigadeSubjects.length === 0} />
-        <Tab label="Роли (super)" disabled={me.role !== 'SUPER_ADMIN'} />
+        <Tab label="Students" />
+        <Tab label="Subjects" />
+        <Tab label="Brigades" disabled={brigadeSubjects.length === 0} />
+        <Tab label="Roles" disabled={me.role !== 'SUPER_ADMIN'} />
       </Tabs>
 
       {tab === 0 ? (
         <Stack spacing={2}>
-          <Card sx={{ p: 2, borderRadius: 3 }}>
-            <Typography fontWeight={700} sx={{ mb: 1 }}>
-              Добавить студента
+          <Card sx={{ p: 2.5, borderRadius: 3 }}>
+            <Typography fontWeight={700} sx={{ mb: 1.5 }} variant="h6">
+              Add Student
             </Typography>
             <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
-              <TextField label="ФИО" value={newFio} onChange={(e) => setNewFio(e.target.value)} fullWidth />
-              <TextField label="telegram_tag" value={newTag} onChange={(e) => setNewTag(e.target.value)} fullWidth />
+              <TextField
+                label="Name"
+                value={newFio}
+                onChange={(e) => setNewFio(e.target.value)}
+                fullWidth
+              />
+              <TextField
+                label="Telegram"
+                value={newTag}
+                onChange={(e) => setNewTag(e.target.value)}
+                fullWidth
+                placeholder="username"
+              />
               <FormControl sx={{ minWidth: 140 }}>
-                <InputLabel>Подгруппа</InputLabel>
-                <Select value={newSubgroup} label="Подгруппа" onChange={(e) => setNewSubgroup(Number(e.target.value) as any)}>
+                <InputLabel>Subgroup</InputLabel>
+                <Select
+                  value={newSubgroup}
+                  label="Subgroup"
+                  onChange={(e) => setNewSubgroup(Number(e.target.value))}
+                >
                   <MenuItem value={1}>1</MenuItem>
                   <MenuItem value={2}>2</MenuItem>
                 </Select>
               </FormControl>
-              <Button variant="contained" onClick={async () => handleAddStudent()}>
-                Добавить
+              <Button variant="contained" onClick={async () => await handleAddStudent()}>
+                Add
               </Button>
             </Stack>
-            {error ? (
+            {error && (
               <Typography color="error" sx={{ mt: 1 }}>
                 {error}
               </Typography>
-            ) : null}
+            )}
           </Card>
 
-          <Card sx={{ p: 2, borderRadius: 3 }}>
-            <Typography fontWeight={700} sx={{ mb: 1 }}>
-              Список студентов
+          <Card sx={{ p: 2.5, borderRadius: 3 }}>
+            <Typography fontWeight={700} sx={{ mb: 1.5 }} variant="h6">
+              Students
             </Typography>
             <Stack spacing={1}>
               {students.map((st) => (
                 <Box key={st.id} sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}>
                   <Typography>
-                    {st.fio} · подгруппа {st.subgroup} · @{st.telegramTag || 'нет тега'}
+                    {st.fio} · subgroup {st.subgroup} · @{st.telegramTag || 'no tag'}
                   </Typography>
                   <Stack direction="row" spacing={1} alignItems="center">
-                    {st.isSuperAdmin ? <Chip label="Super" color="secondary" size="small" /> : null}
-                    {st.isAdmin ? <Chip label="Админ" color="primary" size="small" /> : null}
+                    {st.isSuperAdmin ? (
+                      <Chip label="Super" color="secondary" size="small" />
+                    ) : null}
+                    {st.isAdmin ? (
+                      <Chip label="Admin" color="primary" size="small" />
+                    ) : null}
                     <IconButton size="small" onClick={() => openEditDialog(st)} disabled={st.isSuperAdmin && st.id !== me.id}>
-                      <EditIcon />
+                      <Edit />
                     </IconButton>
-                    <IconButton 
-                      size="small" 
-                      color="error" 
-                      onClick={() => confirmDelete(st.id)}
-                      disabled={st.isSuperAdmin}
-                    >
-                      <DeleteIcon />
+                    <IconButton size="small" color="error" onClick={() => confirmDelete(st.id)} disabled={st.isSuperAdmin}>
+                      <Delete />
                     </IconButton>
                   </Stack>
                 </Box>
               ))}
-              {students.length === 0 ? <Typography color="text.secondary">Пока пусто.</Typography> : null}
+              {students.length === 0 ? (
+                <Typography color="text.secondary">No students.</Typography>
+              ) : null}
             </Stack>
           </Card>
         </Stack>
@@ -375,48 +404,59 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
 
       {tab === 1 ? (
         <Stack spacing={2}>
-          <Card sx={{ p: 2, borderRadius: 3 }}>
-            <Typography fontWeight={700} sx={{ mb: 1 }}>
-              Добавить предмет
+          <Card sx={{ p: 2.5, borderRadius: 3 }}>
+            <Typography fontWeight={700} sx={{ mb: 1.5 }} variant="h6">
+              Add Subject
             </Typography>
             <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
-              <TextField label="Аббревиатура предмета" value={newSubjectName} onChange={(e) => setNewSubjectName(e.target.value)} fullWidth />
+              <TextField
+                label="Subject"
+                value={newSubjectName}
+                onChange={(e) => setNewSubjectName(e.target.value)}
+                fullWidth
+              />
               <FormControl sx={{ minWidth: 220 }}>
-                <InputLabel>Тип сдачи</InputLabel>
-                <Select value={newSubjectDeliveryType} label="Тип сдачи" onChange={(e) => setNewSubjectDeliveryType(e.target.value as any)}>
-                  <MenuItem value="INDIVIDUAL">Индивидуальный</MenuItem>
-                  <MenuItem value="BRIGADE">Бригадный</MenuItem>
+                <InputLabel>Type</InputLabel>
+                <Select
+                  value={newSubjectDeliveryType}
+                  label="Type"
+                  onChange={(e) => setNewSubjectDeliveryType(e.target.value as any)}
+                >
+                  <MenuItem value="INDIVIDUAL">Individual</MenuItem>
+                  <MenuItem value="BRIGADE">Brigade</MenuItem>
                 </Select>
               </FormControl>
-              <Button variant="contained" onClick={async () => handleAddSubject()}>
-                Добавить
+              <Button variant="contained" onClick={async () => await handleAddSubject()}>
+                Add
               </Button>
             </Stack>
-            {error ? (
+            {error && (
               <Typography color="error" sx={{ mt: 1 }}>
                 {error}
               </Typography>
-            ) : null}
+            )}
           </Card>
 
-          <Card sx={{ p: 2, borderRadius: 3 }}>
-            <Typography fontWeight={700} sx={{ mb: 1 }}>
-              Предметы
+          <Card sx={{ p: 2.5, borderRadius: 3 }}>
+            <Typography fontWeight={700} sx={{ mb: 1.5 }} variant="h6">
+              Subjects
             </Typography>
             <Stack spacing={1}>
               {subjects.map((subj) => (
                 <Box key={subj.id} sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}>
                   <Typography>
-                    {subj.name} · {subj.deliveryType === 'BRIGADE' ? 'Бригадный' : 'Индивидуальный'}
+                    {subj.name} · {subj.deliveryType === 'BRIGADE' ? 'Brigade' : 'Individual'}
                   </Typography>
                   {subj.deliveryType === 'BRIGADE' ? (
-                    <Button size="small" variant={selectedBrigadeSubjectId === subj.id ? 'contained' : 'outlined'} onClick={() => setSelectedBrigadeSubjectId(subj.id)}>
-                      Настроить бригады
+                    <Button size="small" variant="outlined" onClick={() => setSelectedBrigadeSubjectId(subj.id)}>
+                      Configure
                     </Button>
                   ) : null}
                 </Box>
               ))}
-              {subjects.length === 0 ? <Typography color="text.secondary">Пока нет предметов.</Typography> : null}
+              {subjects.length === 0 ? (
+                <Typography color="text.secondary">No subjects.</Typography>
+              ) : null}
             </Stack>
           </Card>
         </Stack>
@@ -424,22 +464,24 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
 
       {tab === 2 ? (
         <Stack spacing={2}>
-          <Card sx={{ p: 2, borderRadius: 3 }}>
-            <Typography fontWeight={700} sx={{ mb: 1 }}>
-              Создание бригад для предмета
+          <Card sx={{ p: 2.5, borderRadius: 3 }}>
+            <Typography fontWeight={700} sx={{ mb: 1.5 }} variant="h6">
+              Create Brigades
             </Typography>
             {selectedBrigadeSubject ? (
               <Typography color="text.secondary" sx={{ mb: 2 }}>
-                Предмет: <b>{selectedBrigadeSubject.name}</b>
+                Subject: <b>{selectedBrigadeSubject.name}</b>
               </Typography>
             ) : (
-              <Typography color="text.secondary">Выберите предмет.</Typography>
+              <Typography color="text.secondary">
+                Select a subject to configure brigades.
+              </Typography>
             )}
 
             <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
-              <Card sx={{ flex: 1, p: 2, borderRadius: 3 }}>
-                <Typography fontWeight={700} sx={{ mb: 1 }}>
-                  Собрать новую бригаду
+              <Card sx={{ flex: 1, p: 2.5, borderRadius: 3 }}>
+                <Typography fontWeight={700} sx={{ mb: 1 }} variant="subtitle1">
+                  New Brigade
                 </Typography>
                 <Stack spacing={1} sx={{ maxHeight: 320, overflow: 'auto' }}>
                   {students.map((st) => {
@@ -459,16 +501,16 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
                   })}
                 </Stack>
                 <Button variant="outlined" sx={{ mt: 1 }} onClick={addGroupFromSelected} disabled={builderSelected.size === 0}>
-                  Добавить бригаду (из выбранных)
+                  Add Brigade
                 </Button>
               </Card>
 
-              <Card sx={{ flex: 1, p: 2, borderRadius: 3 }}>
-                <Typography fontWeight={700} sx={{ mb: 1 }}>
-                  Созданные бригады
+              <Card sx={{ flex: 1, p: 2.5, borderRadius: 3 }}>
+                <Typography fontWeight={700} sx={{ mb: 1 }} variant="subtitle1">
+                  Brigades
                 </Typography>
                 <Stack spacing={1}>
-                  {groups.length === 0 ? <Typography color="text.secondary">Пока бригад нет. Соберите первую.</Typography> : null}
+                  {groups.length === 0 ? <Typography color="text.secondary">No brigades yet.</Typography> : null}
                   {groups.map((g, idx) => (
                     <Box key={idx} sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, alignItems: 'center' }}>
                       <Typography variant="body2" sx={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -479,7 +521,7 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
                           .join(', ')}
                       </Typography>
                       <Button size="small" variant="text" color="error" onClick={() => removeGroup(idx)}>
-                        Удалить
+                        Delete
                       </Button>
                     </Box>
                   ))}
@@ -487,16 +529,16 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
 
                 <Box sx={{ mt: 2 }}>
                   <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                    Распределено студентов: {usedCountText(groups, students)}
+                    Assigned: {assignedStudentIds.size} / {students.length}
                   </Typography>
                   <Button variant="contained" onClick={saveBrigades} disabled={!selectedBrigadeSubjectId}>
-                    Сохранить бригады
+                    Save
                   </Button>
-                  {error ? (
+                  {error && (
                     <Typography color="error" sx={{ mt: 1 }}>
                       {error}
                     </Typography>
-                  ) : null}
+                  )}
                 </Box>
               </Card>
             </Stack>
@@ -506,9 +548,9 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
 
       {tab === 3 ? (
         <Stack spacing={2}>
-          <Card sx={{ p: 2, borderRadius: 3 }}>
-            <Typography fontWeight={700} sx={{ mb: 1 }}>
-              Управление администраторами
+          <Card sx={{ p: 2.5, borderRadius: 3 }}>
+            <Typography fontWeight={700} sx={{ mb: 1.5 }} variant="h6">
+              Admin Management
             </Typography>
             <Stack spacing={1}>
               {students.map((st) => (
@@ -526,30 +568,29 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
         </Stack>
       ) : null}
 
-      {/* Edit Student Dialog */}
       <Dialog open={editDialog.open} onClose={() => setEditDialog({ ...editDialog, open: false })} maxWidth="sm" fullWidth>
-        <DialogTitle>Редактировать студента</DialogTitle>
+        <DialogTitle>Edit Student</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
             <TextField
-              label="ФИО"
+              label="Name"
               value={editDialog.fio}
               onChange={(e) => setEditDialog({ ...editDialog, fio: e.target.value })}
               fullWidth
             />
             <TextField
-              label="telegram_tag"
+              label="Telegram"
               value={editDialog.telegramTag}
               onChange={(e) => setEditDialog({ ...editDialog, telegramTag: e.target.value })}
               fullWidth
               placeholder="username"
             />
             <FormControl fullWidth>
-              <InputLabel>Подгруппа</InputLabel>
+              <InputLabel>Subgroup</InputLabel>
               <Select
                 value={editDialog.subgroup}
-                label="Подгруппа"
-                onChange={(e) => setEditDialog({ ...editDialog, subgroup: Number(e.target.value) as number })}
+                label="Subgroup"
+                onChange={(e) => setEditDialog({ ...editDialog, subgroup: Number(e.target.value) })}
               >
                 <MenuItem value={1}>1</MenuItem>
                 <MenuItem value={2}>2</MenuItem>
@@ -558,28 +599,21 @@ export function AdminPage({ me, onMeChange }: { me: ApiMe; onMeChange: (me: ApiM
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setEditDialog({ ...editDialog, open: false })}>Отмена</Button>
-          <Button variant="contained" onClick={handleSaveEdit}>Сохранить</Button>
+          <Button onClick={() => setEditDialog({ ...editDialog, open: false })}>Cancel</Button>
+          <Button variant="contained" onClick={handleSaveEdit}>Save</Button>
         </DialogActions>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
       <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
-        <DialogTitle>Подтверждение удаления</DialogTitle>
+        <DialogTitle>Confirm Delete</DialogTitle>
         <DialogContent>
-          <Typography>Вы действительно хотите удалить этого студента?</Typography>
+          <Typography>Delete this student?</Typography>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDeleteDialogOpen(false)}>Отмена</Button>
-          <Button variant="contained" color="error" onClick={handleDeleteStudent}>Удалить</Button>
+          <Button onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
+          <Button variant="contained" color="error" onClick={handleDeleteStudent}>Delete</Button>
         </DialogActions>
       </Dialog>
     </Box>
   );
 }
-
-function usedCountText(groups: number[][], students: StudentRow[]) {
-  const used = new Set(groups.flatMap((g) => g));
-  return `${used.size} / ${students.length}`;
-}
-

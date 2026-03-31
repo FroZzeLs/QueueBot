@@ -247,6 +247,10 @@ public class AdminController {
             Transaction tx = s.beginTransaction();
             Student st = s.get(Student.class, req.studentId);
             if (st == null) return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "NOT_FOUND"));
+            if (st.isSuperAdmin()) {
+                tx.rollback();
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "CANNOT_MODIFY_SUPER_ADMIN_ROLE"));
+            }
             st.setAdmin(req.enabled);
             s.merge(st);
             tx.commit();

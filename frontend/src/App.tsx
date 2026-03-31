@@ -1,28 +1,13 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { ThemeProvider, createTheme } from '@mui/material/styles';
-import { CssBaseline } from '@mui/material';
 
 import { api, type ApiMe } from './api/client';
 import { LoginPage } from './pages/LoginPage';
 import { QueuePage } from './pages/QueuePage';
 import { AdminPage } from './pages/AdminPage';
+import { ThemeProviderWrapper } from './theme/themeContext';
 
 export function App() {
-  const theme = useMemo(
-    () =>
-      createTheme({
-        palette: {
-          mode: 'light',
-          primary: { main: '#1976d2' },
-          secondary: { main: '#1565c0' },
-          background: { default: '#f5faff' },
-        },
-        typography: { fontFamily: 'Arial, sans-serif' },
-      }),
-    [],
-  );
-
   const [me, setMe] = useState<ApiMe | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -50,8 +35,7 @@ export function App() {
   const isAuthed = !!me;
 
   return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
+    <ThemeProviderWrapper>
       <BrowserRouter>
         {loading ? null : (
           <Routes>
@@ -79,7 +63,6 @@ export function App() {
           </Routes>
         )}
       </BrowserRouter>
-    </ThemeProvider>
+    </ThemeProviderWrapper>
   );
 }
-
